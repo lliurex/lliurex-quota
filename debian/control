@@ -1,0 +1,13 @@
+Source: lliurex-quota
+Section: utils
+Priority: optional
+Maintainer: M.Angel Juan <m.angel.juan@gmail.com>
+Build-Depends: debhelper (>=9)
+Standards-Version: 3.9.6
+Homepage: http://lliurex.net
+
+Package: lliurex-quota
+Architecture: all
+Depends: ${shlibs:Depends}, ${misc:Depends}, n4d, quota
+Description: Quota manager for Lliurex systems
+ Lliurex-quota manages quota system when classroom model is used.
