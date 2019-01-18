@@ -15,3 +15,4 @@ deconfigure_net_serversync=adm,admin,admins
 get_quotafile=adm,admin,admins
 detect_status_folder=adm,admin,admins
 check_active_quotas=adm,admin,admins
+detect_remote_nfs_mount=adm,admin,admins

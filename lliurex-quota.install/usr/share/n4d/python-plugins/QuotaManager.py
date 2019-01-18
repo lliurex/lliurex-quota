@@ -121,6 +121,10 @@ class QuotaManager:
             pass
         return ret
 
+    @proxy
+    def detect_remote_nfs_mount(self,mount='/net/server-sync'):
+        return self.detect_nfs_mount(mount)
+
     def detect_nfs_mount(self,mount='/net/server-sync'):
         try:
             nfsmounts = subprocess.check_output(['findmnt','-J','-t','nfs'])
@@ -133,7 +137,7 @@ class QuotaManager:
             else:
                 return False
         except Exception as e:
-            raise Exception('Error detecting nfs mount {}, {}'.format(mount,e))
+            raise SystemError('Error detecting nfs mount {}, {}'.format(mount,e))
 
     def any_slave(self,ips=[]):
         truncated = [ '.'.join(ip.split('.')[0:2]) for ip in ips ]
@@ -247,9 +251,9 @@ class QuotaManager:
             if hasattr(e,'output'):
                 ips = e.output.strip()
             else:
-                raise Exception('Error trying to get local ips, {}'.format(e))
+                raise SystemError('Error trying to get local ips, {}'.format(e))
         except Exception as e:
-            raise Exception('Error trying to get local ips, {}'.format(e))
+            raise SystemError('Error trying to get local ips, {}'.format(e))
         iplist = []
         for line in ips.split('\n'):
             m = re.search('inet\s+([0-9]{1,3}(?:[.][0-9]{1,3}){3}/[0-9]{1,2})\s+',line)
@@ -259,7 +263,7 @@ class QuotaManager:
 
     def detect_mount_from_path(self,ipath):
         if not os.path.exists(ipath):
-            raise Exception('Path not found')
+            raise ValueError('Path not found')
         mounts = self.get_fstab_mounts()
         out = None
         try:
@@ -271,12 +275,12 @@ class QuotaManager:
         if targetfs in [ x['fs'] for x in mounts ]:
             return targetfs, targetmnt
         else:
-            raise Exception('Filesystem {} not matched from readed fstab'.format(ipath))
+            raise LookupError('Filesystem {} not matched from readed fstab'.format(ipath))
             return None
 
     def get_comments(self, filename):
         if not os.path.isfile(filename):
-            raise Exception('Not valid filename to get comments, {}'.format(filename))
+            raise ValueError('Not valid filename to get comments, {}'.format(filename))
         out = []
         with open(filename,'r') as fp:
             for line in fp.readlines():
@@ -293,9 +297,9 @@ class QuotaManager:
             if hasattr(e,'output'):
                 ids = e.output.strip()
             else:
-                raise Exception('Error trying to get block id\'s'.format(e))
+                raise SystemError('Error trying to get block id\'s'.format(e))
         except Exception as e:
-            raise Exception('Error trying to get block id\'s'.format(e))
+            raise SystemError('Error trying to get block id\'s'.format(e))
         ids = ids.strip().split('\n')
         blklist = []
         for line in ids:
@@ -303,7 +307,7 @@ class QuotaManager:
             if m:
                 blklist.append(m.groupdict())
         if not blklist:
-            raise Exception('Couldn\'t get block list uuids, maybe need run as superuser')
+            raise EnvironmentError('Couldn\'t get block list uuids, maybe need run as superuser')
         return blklist
 
     def get_idx_mapping_lsblk(self):
@@ -315,9 +319,9 @@ class QuotaManager:
             if hasattr(e,'output'):
                 ids = e.output.strip()
             else:
-                raise Exception('Error trying to get block id\'s'.format(e))
+                raise SystemError('Error trying to get block id\'s'.format(e))
         except Exception as e:
-            raise Exception('Error trying to get block id\'s'.format(e))
+            raise SystemError('Error trying to get block id\'s'.format(e))
 
         ids = ids.strip().split('\n')
         blklist = []
@@ -330,7 +334,7 @@ class QuotaManager:
                         dout['fs'] = '/dev/' + dout['fs']
                     blklist.append(dout)
         if not blklist:
-            raise Exception('Couldn\'t get block list uuids, maybe the output format of lsblk ... has changed !!')
+            raise EnvironmentError('Couldn\'t get block list uuids, maybe the output format of lsblk ... has changed !!')
         return blklist
 
     def get_realname(self,devicelink):
@@ -342,9 +346,9 @@ class QuotaManager:
             if hasattr(e,'output'):
                 realname = e.output.strip()
             else:
-                raise Exception('Error trying to get realname from {}, {}\'s'.format(devicelink,e))
+                raise SystemError('Error trying to get realname from {}, {}\'s'.format(devicelink,e))
         except Exception as e:
-            raise Exception('Error trying to get realname from {}, {}'.format(devicelink,e))
+            raise SystemError('Error trying to get realname from {}, {}'.format(devicelink,e))
         try:
             realname = realname.strip()
         except:
@@ -367,7 +371,7 @@ class QuotaManager:
             try:
                 blklist = self.get_idx_mapping_blkid()
             except Exception as e2:
-                raise Exception('Couldn\'t get block id\'s !!\nlsblk says: {}\nblkid says: {}\n'.format(e,e2))
+                raise SystemError('Couldn\'t get block id\'s !!\nlsblk says: {}\nblkid says: {}\n'.format(e,e2))
 
         for linefstab in out:
             if linefstab['fs'].lower()[0:4] == 'uuid':
@@ -439,7 +443,7 @@ class QuotaManager:
                 if token in part:
                     subpart = part.split('=')
                     if len(subpart) != 2:
-                        raise Exception('Malformed option'.fomat(part))
+                        raise SyntaxError('Malformed option'.fomat(part))
                     out.append(subpart[1])
         return out
 
@@ -471,7 +475,7 @@ class QuotaManager:
                 else:
                     nontargets.append(mountitem)
         if not targets:
-            raise Exception('No target filesystems to remove quotas')
+            raise LookupError('No target filesystems to remove quotas')
         with open('/etc/fstab','r') as fpr:
             ts = str(int(time.time()))
             with open('/etc/fstab_bkp_'+ts,'w') as fpw:
@@ -521,7 +525,7 @@ class QuotaManager:
 
     def remount(self,mount='all',forceumount=False):
         if not mount:
-            raise Exception('Need mount when call remount')
+            raise ValueError('Need mount when call remount')
         cmd_append=[]
         if mount != 'all':
             all_mounts = self.get_fstab_mounts()
@@ -533,7 +537,7 @@ class QuotaManager:
                     targets.append(mountitem)
                     break
             if not targets:
-                raise Exception('No target filesystems to remove quotas')
+                raise LookupError('No target filesystems to remove quotas')
         else:
             cmd_append.append('-a')
         cmd = ['mount','-o','remount']
@@ -546,9 +550,9 @@ class QuotaManager:
                     out = e.output
                     return False
                 else:
-                    raise Exception('Error trying to remount ({}) {}, {}'.format(cmd,mount,e))
+                    raise SystemError('Error trying to remount ({}) {}, {}'.format(cmd,mount,e))
             except Exception as e:
-                    raise Exception('Error trying to remount ({}) {}, {}'.format(cmd,mount,e))
+                    raise SystemError('Error trying to remount ({}) {}, {}'.format(cmd,mount,e))
         else:
             for target in targets:
                 if forceumount:
@@ -560,9 +564,9 @@ class QuotaManager:
                             out = e.output
                             return False
                         else:
-                            raise Exception('Error trying to remount ({}),{}, {}'.format(cmdtmp,mount,e))
+                            raise SystemError('Error trying to remount ({}),{}, {}'.format(cmdtmp,mount,e))
                     except Exception as e:
-                        raise Exception('Error trying to remount ({}) {}, {}'.format(cmdtmp,mount,e))
+                        raise SystemError('Error trying to remount ({}) {}, {}'.format(cmdtmp,mount,e))
 
                     cmdtmp = ['mount','-o',target['options'],target['mountpoint']]
                     try:
@@ -572,9 +576,9 @@ class QuotaManager:
                             out = e.output
                             return False
                         else:
-                            raise Exception('Error trying to remount ({}),{}, {}'.format(cmdtmp,mount,e))
+                            raise SystemError('Error trying to remount ({}),{}, {}'.format(cmdtmp,mount,e))
                     except Exception as e:
-                        raise Exception('Error trying to remount ({}) {}, {}'.format(cmdtmp,mount,e))
+                        raise SystemError('Error trying to remount ({}) {}, {}'.format(cmdtmp,mount,e))
                 else:
                     cmdtmp = cmd + ['-o',target['options'],target['mountpoint']]
                     try:
@@ -584,14 +588,14 @@ class QuotaManager:
                             out = e.output
                             return False
                         else:
-                            raise Exception('Error trying to remount ({}),{}, {}'.format(cmdtmp,mount,e))
+                            raise SystemError('Error trying to remount ({}),{}, {}'.format(cmdtmp,mount,e))
                     except Exception as e:
-                        raise Exception('Error trying to remount ({}) {}, {}'.format(cmdtmp,mount,e))
+                        raise SystemError('Error trying to remount ({}) {}, {}'.format(cmdtmp,mount,e))
         return True
 
     def set_mount_with_quota(self, mount=None):
         if mount == None:
-            raise Exception('Mandatory mountpoint when setting quotas')
+            raise ValueError('Mandatory mountpoint when setting quotas')
         quota_mounts = self.get_mounts_with_quota()
         all_mounts = self.get_fstab_mounts()
         found = False
@@ -612,15 +616,15 @@ class QuotaManager:
                             found = True
                             break
                 if found:
-                    raise Exception('Mount {} already with quota'.format(mountitem['mountpoint']))
+                    raise RuntimeWarning('Mount {} already with quota'.format(mountitem['mountpoint']))
                 else:
                     if mountitem['type'] not in ['ext3','ext4','xfs','reiserfs']:
-                        raise Exception('Type {type} for filesystem {fs} not suitable for quotas'.format(**mountitem))
+                        raise TypeError('Type {type} for filesystem {fs} not suitable for quotas'.format(**mountitem))
                     targets.append(mountitem)
             else:
                 nontargets.append(mountitem)
         if not targets:
-            raise Exception('No target filesystems to add quotas')
+            raise LookupError('No target filesystems to add quotas')
         with open('/etc/fstab','r') as fpr:
             ts = str(int(time.time()))
             with open('/etc/fstab_bkp_'+ts,'w') as fpw:
@@ -647,11 +651,11 @@ class QuotaManager:
                 out=subprocess.check_output(['quotacheck','-vguma'],stderr=subprocess.STDOUT)
             except subprocess.CalledProcessError as e:
                 if hasattr(e,'output'):
-                    raise Exception('Error trying to check initial quotas on {}, {}, {}'.format(target['fs'],e,e.output.strip()))
+                    raise SystemError('Error trying to check initial quotas on {}, {}, {}'.format(target['fs'],e,e.output.strip()))
                 else:
-                    raise Exception('Error trying to check initial quotas on {}, {}'.format(target['fs'],e))
+                    raise SystemError('Error trying to check initial quotas on {}, {}'.format(target['fs'],e))
             except Exception as e:
-                raise Exception('Error trying to check initial quotas on {}, {}'.format(target['fs'],e))
+                raise SystemError('Error trying to check initial quotas on {}, {}'.format(target['fs'],e))
         self.activate('quotaon')
         self.activate('quotarpc')
         return True
@@ -665,9 +669,9 @@ class QuotaManager:
             if hasattr(e,'output'):
                 pwdlist = e.output.strip()
             else:
-                raise Exception('Error getting userlist, {}'.format(e))
+                raise SystemError('Error getting userlist, {}'.format(e))
         except Exception as e:
-            raise Exception('Error getting userlist, {}'.format(e))
+            raise SystemError('Error getting userlist, {}'.format(e))
             pass
         pwdlist = pwdlist.strip().split('\n')
         userlist = []
@@ -683,14 +687,14 @@ class QuotaManager:
         file = 'quotas'
         filepath = folder + '/' + file
         if not os.path.isfile(filepath):
-            raise Exception('Missing quotas file {}'.format(filepath))
+            raise ValueError('Missing quotas file {}'.format(filepath))
         try:
             with open(filepath,'r') as fp:
                 qinfo = json.load(fp)
         except Exception as e:
-            raise Exception('Error reading file quotas {}, {}'.format(filepath,e))
+            raise SystemError('Error reading file quotas {}, {}'.format(filepath,e))
         if type(qinfo) != type(dict()):
-            raise Exception('Error reading file quotas {}, expected dictionary'.format(filepath))
+            raise SystemError('Error reading file quotas {}, expected dictionary'.format(filepath))
         return qinfo
 
     def set_quotas_file(self,quotasdict={}):
@@ -698,17 +702,17 @@ class QuotaManager:
         file = 'quotas'
         filepath = folder + '/' + file
         if type(quotasdict) != type(dict()):
-            raise Exception('Invalid dictionary quotas passed to set_quotas_file')
+            raise ValueError('Invalid dictionary quotas passed to set_quotas_file')
         if not os.path.isdir(folder):
             try:
                 os.mkdir(folder)
             except Exception as e:
-                raise Exception('Error creating quotas dir {}, {}'.format(folder,e))
+                raise SystemError('Error creating quotas dir {}, {}'.format(folder,e))
         try:
             with open(filepath,'w') as fp:
                 json.dump(quotasdict,fp,sort_keys=True)
         except Exception as e:
-            raise Exception('Error writting file quotas {}, {}'.format(filepath,e))
+            raise SystemError('Error writting file quotas {}, {}'.format(filepath,e))
         return True
 
     def get_moving_directories(self):
@@ -717,7 +721,7 @@ class QuotaManager:
             mp = moving.MovingProfiles('')
             return mp.cfg['include'].values()
         except:
-            raise Exception('Unable to get moving directories')
+            raise ImportError('Unable to get moving directories')
 
     def get_moving_dir(self,user=None):
         basepath = '/net/server-sync/home'
@@ -804,14 +808,14 @@ class QuotaManager:
 
     def get_user_space(self,folder=None,user=None):
         if user == None or folder == None:
-            raise Exception('Need user and folder getting user space')
+            raise ValueError('Need user and folder getting user space')
         if not os.path.isdir(folder):
-            raise Exception('Invalid folder to get userspace')
+            raise ValueError('Invalid folder to get userspace')
         us = self.get_system_users()
         uparam = ''
         if user not in us:
             if str(user).lower() != 'all':
-                raise Exception('Invalid user to get userspace')
+                raise LookupError('Invalid user to get userspace')
         else:
             uparam = '-user {}'.format(user)
         try:
@@ -820,9 +824,9 @@ class QuotaManager:
             if hasattr(e,'output'):
                 pwdlist = e.output.strip()
             else:
-                raise Exception('Error getting consumed space by user {}, {}'.format(user,e))
+                raise SystemError('Error getting consumed space by user {}, {}'.format(user,e))
         except Exception as e:
-            raise Exception('Error getting consumed space by user {}, {}'.format(user,e))
+            raise SystemError('Error getting consumed space by user {}, {}'.format(user,e))
         #print 'sizes --> {}'.format(sizes)
         if str(user).lower() == 'all':
             sizes = sizes.split('\n')
@@ -843,9 +847,9 @@ class QuotaManager:
             if hasattr(e,'output'):
                 grplist = e.output.strip()
             else:
-                raise Exception('Error getting grouplist, {}'.format(e))
+                raise SystemError('Error getting grouplist, {}'.format(e))
         except Exception as e:
-            raise Exception('Error getting grouplist, {}'.format(e))
+            raise SystemError('Error getting grouplist, {}'.format(e))
             pass
         grplist = grplist.strip().split('\n')
         grpdict = {'bygroup':{},'byuser':{}}
@@ -872,7 +876,7 @@ class QuotaManager:
             return self.get_quotas2()
         users = self.get_system_users()
         if user not in users:
-            raise Exception('No such user')
+            raise ValueError('No such user')
         if humanunits == True:
             uparam = '-s'
         else:
@@ -883,9 +887,9 @@ class QuotaManager:
             if hasattr(e,'output'):
                 out = e.output.strip()
             else:
-                raise Exception('Error getting quota for user {} , {}'.format(user,e))
+                raise SystemError('Error getting quota for user {} , {}'.format(user,e))
         except:
-            raise Exception('Error getting quota for user {}, {}'.format(user,e))
+            raise SystemError('Error getting quota for user {}, {}'.format(user,e))
 
         quotainfo={}
         out = out.split('\n')[2]
@@ -950,7 +954,7 @@ class QuotaManager:
         targetuser = []
         if user != 'all':
             if user not in userlist:
-                raise Exception('Invalid user, {}'.format(user))
+                raise ValueError('Invalid user, {}'.format(user))
             if filterbygroup:
                 for grp_filtered in filterbygroup:
                     if user in groups['bygroup'][grp_filtered]:
@@ -966,9 +970,9 @@ class QuotaManager:
             else:
                 targetuser = userlist
         if not targetuser:
-            raise Exception('No users available to apply quota, called user={}'.format(user))
+            raise LoockupError('No users available to apply quota, called user={}'.format(user))
         if not re.findall(r'\d+[KMG]?',str(quota)):
-            raise Exception('Invalid quota value, {}'.format(quota))
+            raise ValueError('Invalid quota value, {}'.format(quota))
         quota = self.normalize_units(quota)
         margin = self.normalize_units(margin)
         append_command = []
@@ -983,7 +987,7 @@ class QuotaManager:
                     valid = True
                     devicelist.append(dev['fs'])
             if not valid:
-                raise Exception('mountpoint not valid, {}'.format(mount))
+                raise ValueError('mountpoint not valid, {}'.format(mount))
         if persistent:
             qfile = self.get_quotas_file()
         for useritem in targetuser:
@@ -997,9 +1001,9 @@ class QuotaManager:
                         if hasattr(e,'output'):
                             out = e.output.strip()
                         else:
-                            raise Exception('Error setting quota on {} = margin({}) quota({}) for user {}, {}'.format(mount,margin,quota,user,e))
+                            raise SystemError('Error setting quota on {} = margin({}) quota({}) for user {}, {}'.format(mount,margin,quota,user,e))
                     except Exception as e:
-                        raise Exception('Error setting quota on {} = margin({}) quota({}) for user {}, {}'.format(mount,margin,quota,user,e))
+                        raise SystemError('Error setting quota on {} = margin({}) quota({}) for user {}, {}'.format(mount,margin,quota,user,e))
             else:
                 cmd.extend(append_command)
                 try:
@@ -1008,9 +1012,9 @@ class QuotaManager:
                     if hasattr(e,'output'):
                         out = e.output.strip()
                     else:
-                        raise Exception('Error setting quota on {} = margin({}) quota({}) for user {}, {}'.format(mount,margin,quota,user,e))
+                        raise SystemError('Error setting quota on {} = margin({}) quota({}) for user {}, {}'.format(mount,margin,quota,user,e))
                 except Exception as e:
-                    raise Exception('Error setting quota on {} = margin({}) quota({}) for user {}, {}'.format(mount,margin,quota,user,e))
+                    raise SystemError('Error setting quota on {} = margin({}) quota({}) for user {}, {}'.format(mount,margin,quota,user,e))
             if persistent and useritem in qfile:
                 qfile[useritem] = {'quota':quota,'margin':margin}
         if persistent:
@@ -1040,20 +1044,27 @@ class QuotaManager:
                 except:
                     pass
         if value == None:
-            raise Exception('Unknown unit when normalize')
+            raise TypeError('Unknown unit when normalize')
         return value
 
     @proxy
     def check_active_quotas(self,mount):
-        return self.check_quotas_status(status={'user':'on','group':'on','project':'off'},device=mount,quotatype=['user','group'])
+        ret = None
+        try:
+            ret=self.check_quotas_status(status={'user':'on','group':'on','project':'off'},device=mount,quotatype=['user','group'])
+            return ret
+        except AssertionError as e:
+            return False
+        except Exception as e:
+            raise SystemError('Error checking quotas, {}'.format(e))
 
     def check_quotas_status(self, status=None, device='all', quotatype='all'):
         valid_types = ['user','group','project']
         if not status:
-            raise Exception('Need valid status when check quotas, {}'.format(status))
+            raise ValueError('Need valid status when check quotas, {}'.format(status))
         for status_key in status:
             if str(status[status_key]).lower() not in ['on','off']:
-                raise Exception('Need valid status when check {} quotas, {}'.format(status_key,status[status_key]))
+                raise ValueError('Need valid status when check {} quotas, {}'.format(status_key,status[status_key]))
         if quotatype == 'all':
             typelist = valid_types
         else:
@@ -1062,17 +1073,17 @@ class QuotaManager:
                     Exception('Not valid type to check quota on device')
             else:
                 if not isinstance(quotatype,list):
-                    raise Exception("Type '{}' not valid".format(quotatype))
+                    raise TypeError("Type '{}' not valid".format(quotatype))
                 typelist = [ str(t).lower() for t in quotatype if str(t).lower() in valid_types ]
                 if not typelist:
-                    raise Exception("Type '{}' not valid".format(quotatype))
+                    raise TypeError("Type '{}' not valid".format(quotatype))
 
         status_quotaon = self.check_quotaon()
         if not status_quotaon: # empty, not configured quotas
             if status == 'off':
                 return True
             else:
-                raise Exception('No devices with quota found')
+                raise AssertionError('No devices with quota found')
         check = {}
         for key in typelist:
             if device == 'all':
@@ -1084,7 +1095,7 @@ class QuotaManager:
                     if str(os.path.normpath(device)) in status_quotaon[key][typedev].keys():
                             check.setdefault(key,status_quotaon[key][typedev][str(os.path.normpath(device))])
                 if not check:
-                    raise Exception('Device not found when trying to check quota status, {}'.format(device))
+                    raise LookupError('Device not found when trying to check quota status, {}'.format(device))
         if device != 'all':
             if len(check) != len(typelist):
                 return False
@@ -1130,9 +1141,9 @@ class QuotaManager:
             if hasattr(e,'output'):
                 out = e.output.strip()
             else:
-                raise Exception('Error unexpected output from quotaon, {}'.format(e))
+                raise SystemError('Error unexpected output from quotaon, {}'.format(e))
         except Exception as e:
-            raise Exception('Error checking quotaon {}'.format(e))
+            raise SystemError('Error checking quotaon {}'.format(e))
         tmp = re.findall(r'(user|group|project) quota on (\S+) \((\S+)\) is (on|off)',out,re.IGNORECASE)
         out = {}
         for line in tmp:
@@ -1145,7 +1156,7 @@ class QuotaManager:
         try:
             rpcinfo = subprocess.check_output(['rpcinfo','-p'])
         except Exception as e:
-            raise Exception('Error checking rpcinfo, {}'.format(e))
+            raise SystemError('Error checking rpcinfo, {}'.format(e))
         return True if 'rquotad' in rpcinfo else False
 
     def activate(self, type):
@@ -1156,7 +1167,7 @@ class QuotaManager:
                 'quotarpc': {'script': scripts_path + 'quotarpc.sh', 'checker': self.check_rquota_active }
                 }
         if type not in types.keys():
-            raise Exception('{} not valid type for activation'.format(type))
+            raise ValueError('{} not valid type for activation'.format(type))
         try:
             self.activate_script(types[type])
         except Exception as e:
@@ -1182,17 +1193,17 @@ class QuotaManager:
 
         if not res:
             if not os.path.isfile(name):
-                raise Exception('{} not found'.format(name))
+                raise ValueError('{} not found'.format(name))
             try:
                 subprocess.call([name], shell=True, stderr=open(os.devnull,'w'), stdout=open(os.devnull,'w'))
             except Exception as e:
-                raise Exception('Error calling {}'.format(name))
+                raise SystemError('Error calling {}'.format(name))
             if args:
                 res = checker(**args)
             else:
                 res = checker()
             if not res:
-                raise Exception('Error trying to activate {}'.format(name))
+                raise SystemError('Error trying to activate {}'.format(name))
         return True
 
     @proxy
@@ -1211,9 +1222,9 @@ class QuotaManager:
             if hasattr(e,'output'):
                 quotalist = e.output.strip()
             else:
-                raise Exception('Error getting quotalist, {}'.format(e))
+                raise SystemError('Error getting quotalist, {}'.format(e))
         except Exception as e:
-            raise Exception('Error getting quotalist, {}'.format(e))
+            raise SystemError('Error getting quotalist, {}'.format(e))
         quotalist = quotalist.strip().split('\n')
         quotadict = {}
         skip = 1
@@ -1263,25 +1274,26 @@ class QuotaManager:
         return self.get_status_file()
 
     def get_local_status(self):
-        ret = {}
-        ret['running_system'] = self.detect_running_system()
-        ret['use_nfs'] = self.detect_nfs_mount()
+        ret = {'local':{},'remote':{}}
+        ret['local']['running_system'] = self.detect_running_system()
+        ret['local']['use_nfs'] = self.detect_nfs_mount()
         try:
-            ret['status_serversync'],fs,mount = self.detect_status_folder('/net/server-sync')
+            ret['remote']['status_serversync'],fs,mount = self.detect_status_folder('/net/server-sync')
             try:
-                ret['status_quotas'] = self.check_active_quotas(fs)
+                ret['remote']['status_quotas'] = self.check_active_quotas(fs)
             except Exception as e:
-                ret['status_quotas'] = 'Fail checking if quotas are active on filesystem {}, {}'.format(fs,e)
+                ret['remote']['status_quotas'] = 'Fail checking if quotas are active on filesystem {}, {}'.format(fs,e)
         except Exception as e:
-            ret['status_serversync']='Fail checking if /net/server-sync are configured, i will use \'all\' as device to check if quotas are active {}'.format(e)
+            ret['remote']['status_serversync']='Fail checking if /net/server-sync are configured, i will use \'all\' as device to check if quotas are active {}'.format(e)
             try:
-                ret['status_quotas'] = self.check_active_quotas(fs)
+                ret['remote']['status_quotas'] = self.check_active_quotas(fs)
             except Exception as e2:
                 try:
-                    ret['status_quotas'] = self.check_active_quotas('all')
+                    ret['remote']['status_quotas'] = self.check_active_quotas('all')
                 except Exception as e3:
-                    ret['status_quotas'] = 'Fail checking if quotas are active, {}, {}, {} '.format(e,e2,e3)
-        ret['status_file'] = self.get_status()
+                    ret['remote']['status_quotas'] = 'Fail checking if quotas are active, {}, {}, {} '.format(e,e2,e3)
+        ret['remote']['status_file'] = self.get_status()
+        ret['remote']['use_nfs'] = self.detect_remote_nfs_mount()
         return ret
 
     @proxy
