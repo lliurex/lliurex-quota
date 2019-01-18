@@ -67,7 +67,11 @@ class QuotaManager:
             def wrapper(*args,**kwargs):
                 if DEBUG:
                     print('into wrapper({}) {} {}'.format(func.__name__,args,kwargs))
-                if self.fake_client:
+                if self.type_client == 'slave':
+                    exceptions_function_cut_expansion = ['detect_remote_nfs_mount']
+                else:
+                    exceptions_function_cut_expansion = []
+                if self.fake_client or func.__name__ in exceptions_function_cut_expansion:
                     if DEBUG:
                         print('running fake mode')
                     return func(self,*args,**kwargs)
