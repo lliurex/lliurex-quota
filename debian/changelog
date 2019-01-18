@@ -1,3 +1,9 @@
+lliurex-quota (0.1.2) bionic; urgency=medium
+
+  * Allow exceptions into function propagation call
+
+ -- M.Angel Juan <m.angel.juan@gmail.com>  Fri, 18 Jan 2019 14:12:37 +0100
+
 lliurex-quota (0.1.1) bionic; urgency=medium
 
   * Better exception handling 
