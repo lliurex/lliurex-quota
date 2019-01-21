@@ -17,7 +17,7 @@ import inspect
 # -If it's a client must be n4d call to check quotas (not necesary to set quotas)
 #
 
-DEBUG = False
+DEBUG = True
 
 class QuotaManager:
     def __init__(self):
@@ -745,18 +745,53 @@ class QuotaManager:
         return dirpath
 
     def normalize_quotas(self):
-        #print 'init normalize'
+        def print_dict_ordered(d,level=0,filter='^(file|space|quota|margin|norm|hard|soft)',userfilter='alus01',usefilter=True):
+        try:
+        filtered = False
+        ret = ''
+        inc = 4
+        space = ' '*(level+inc)
+        dspace = space + space
+            for x,y in ((ks,d[ks]) for ks in sorted(d.keys())):
+            if usefilter:
+            if not (re.match(filter,x) or re.match(userfilter,x)):
+                filtered = True
+                continue
+            if isinstance(y,dict):
+                ret += '\n{}{}{}{}'.format(space,x,dspace,str(print_dict_ordered(y,level+inc)))
+            else:
+                ret += '\n{}{} -> {}'.format(space,x,y)
+        if filtered:
+            return '{}\nWARNING THIS IS FILTERED DATA, REMOVE FILTER TO VIEW FULL DATA\n'.format(ret)
+        else:
+                return ret
+        except Exception as e:
+        import traceback
+        print('{},\n{}'.format(e,traceback.print_exc()))
+
+        if DEBUG:
+            print('init normalize')
         quotas = self.get_quotas(humanunits=False)
-        #print 'quotas get {}'.format(quotas)
+        if DEBUG:
+            print('quotas from fs (raw) (absolute values) {}'.format(print_dict_ordered(quotas)))
         qdict = {}
+
+    def abs_to_relative(soft,hard):
+        hard=self.normalize_units(hard)
+        soft=self.normalize_units(soft)
+        if hard - soft < 0:
+        soft = hard
+        margin = hard - soft
+        return {'quota': soft,'margin':margin}
+
         for quotauser in quotas:
-            hard = self.normalize_units(quotas[quotauser]['spacehardlimit'])
-            soft = self.normalize_units(quotas[quotauser]['spacesoftlimit'])
-            if hard - soft < 0:
-                soft = hard
-            margin = hard - soft
-            qstruct={'quota': soft,'margin':margin}
-            qdict.setdefault(quotauser,qstruct)
+        qdict.setdefault(quotauser,abs_to_relative(quotas[quotauser]['spacesoftlimit'],quotas[quotauser]['spacehardlimit']))
+
+        if DEBUG:
+            print('qdict (quotas from fs (not absolute values)) {}'.format(print_dict_ordered(qdict)))
+        
+        # qdict stores quotas readed from quota subsystem calling repquota, qdict represents actual quotas used by fs
+        
         try:
             qfile = self.get_quotas_file()
             if qfile == {}:
@@ -765,23 +800,36 @@ class QuotaManager:
         except:
             self.set_quotas_file(qdict)
             qfile = qdict
+            
+        # qfile stores administrator configured quotas without normalization process
+        
         users = self.get_system_users()
         for user in users:
             if user not in qfile:
                 qfile[user] = {'quota':0,'margin':0}
-        #print 'init qfile {}'.format(qfile['alus01'])
+        if DEBUG:
+            print('qfile (quotas from/to configfile) {}'.format(print_dict_ordered(qfile)))
+        
+        # begin normalization process
+        
         userinfo = {}
         for user in qfile:
-            #print 'using user --> {} {}'.format(user,type({'quota':qfile[user]}))
             userinfo.setdefault(user,{'quota':qfile[user],'normquota':{'hard':0,'soft':0}})
-            #print 'first userinfo {}'.format(userinfo)
-            #print 'Getting moving for user --> {}'.format(user)
             dpath = self.get_moving_dir(user)
-            #print 'dpath {}'.format(dpath)
+
             try:
-                if dpath:
+                if dpath: 
+
+            # detected moving profile's possible duplicated data
+
                     userinfo[user]['moving_quota'] = self.get_user_space(folder=dpath,user=user)[user]
-                    #print 'moving quota {}'.format(userinfo[user]['moving_quota'])
+            
+            # real quota must ignore that (moving data) increase of size 
+
+                    if DEBUG:
+                        print('Getting moving for user ({}) --> {}'.format(user,dpath))
+                        print 'moving quota {}'.format(userinfo[user]['moving_quota'])
+
                     userinfo[user]['normquota']['hard'] = userinfo[user]['quota']['quota'] + userinfo[user]['quota']['margin'] + (userinfo[user]['moving_quota'] * 2)
                     userinfo[user]['normquota']['soft'] = userinfo[user]['quota']['quota'] + (userinfo[user]['moving_quota'] * 2) 
                 else:
@@ -789,23 +837,40 @@ class QuotaManager:
                     userinfo[user]['normquota']['soft'] = userinfo[user]['quota']['quota']
             except Exception as e:
                 import traceback
+                if DEBUG:
+                    print("ERROR NORMALIZING {} {} {}".format(str(e),traceback.format_exc(),user))
                 return "{} {} {}".format(str(e),traceback.format_exc(),user)
-        #print 'calculated userinfo {}'.format(userinfo['alus01'])
+        if DEBUG:
+            print('userinfo (normalized data) {}'.format(print_dict_ordered(userinfo)))
+            
+        # userinfo stores the quotas that should be applied to fs
+        
         qdict2 = {}
         utmp=''
         try:
             for user in userinfo:
                 utmp=user
-                if userinfo[user]['quota']['quota'] == 0:
-                    if user in qdict and qdict[user]['quota'] != userinfo[user]['quota']['quota']:
-                        qdict2.setdefault(user,{'quota':0,'margin':0})
-                else:
-                    if user in qdict and qdict[user]['quota'] != (userinfo[user]['normquota']['hard'] - userinfo[user]['normquota']['soft']):
-                        qdict2.setdefault(user,{'quota':userinfo[user]['normquota']['soft'],'margin':userinfo[user]['normquota']['hard']-userinfo[user]['normquota']['soft']})
+        if user in qdict:
+            if int(quotas[user]['spacesoftlimit']) != int(userinfo[user]['normquota']['soft']) or int(quotas[user]['spacehardlimit']) != int(userinfo[user]['normquota']['hard']):
+            if DEBUG:
+                print('MODIFY USER {} ({},{}) vs ({},{})'.format(user,quotas[user]['spacesoftlimit'],quotas[user]['spacehardlimit'],userinfo[user]['normquota']['soft'],userinfo[user]['normquota']['hard']))
+            qdict2.setdefault(user,abs_to_relative(userinfo[user]['normquota']['soft'],userinfo[user]['normquota']['hard']))
+                #if userinfo[user]['quota']['quota'] == 0:
+                #    if user in qdict and qdict[user]['quota'] != userinfo[user]['quota']['quota']:
+                #        qdict2.setdefault(user,{'quota':0,'margin':0})
+                #else:
+                #    if user in qdict and qdict[user]['quota'] != (userinfo[user]['normquota']['hard'] - userinfo[user]['normquota']['soft']):
+                #        qdict2.setdefault(user,{'quota':userinfo[user]['normquota']['soft'],'margin':userinfo[user]['normquota']['hard']-userinfo[user]['normquota']['soft']})
         except Exception as e:
             import traceback
+            if DEBUG:
+                "ERROR COMPARING QUOTAS {} {} {}".format(str(e),traceback.format_exc(),qdict[utmp])
             return "{} {} {}".format(str(e),traceback.format_exc(),qdict[utmp])
-        #print 'setting quotas file {}'.format(qdict2)
+        
+        # qdict2 stores only quotas that must be updated
+        
+        if DEBUG:
+            print('qdict2 (quotas updated) (if empty, none will be updated) {} \nEND\n'.format(print_dict_ordered(qdict2)))
         self.set_quotas_file(qfile)
         self.apply_quotasdict(qdict2)
         return True
@@ -1209,6 +1274,9 @@ class QuotaManager:
             if not res:
                 raise SystemError('Error trying to activate {}'.format(name))
         return True
+        
+    def sync_quotas(self,*args,**kwargs):
+        current_detected = self.get_quotas(humanunits=False)
 
     @proxy
     def get_quotas(self,*args,**kwargs):
@@ -1270,6 +1338,8 @@ class QuotaManager:
             return str(e)
 
     def apply_quotasdict(self,quotadict):
+        if DEBUG:
+        print('Applying quotas for users {}'.format(quotadict.keys()))
         for user in quotadict:
             self.set_userquota(user,quotadict[user]['quota'],quotadict[user]['margin'],persistent=False)
 
@@ -1376,6 +1446,7 @@ class QuotaManager:
                 self.activate('quotaon')
             if not self.check_rquota_active():
                 self.activate('quotarpc')
+            self.sync_quotas()
             self.normalize_quotas()
             return True
         else:
