@@ -746,28 +746,28 @@ class QuotaManager:
 
     def normalize_quotas(self):
         def print_dict_ordered(d,level=0,filter='^(file|space|quota|margin|norm|hard|soft)',userfilter='alus01',usefilter=True):
-        try:
-        filtered = False
-        ret = ''
-        inc = 4
-        space = ' '*(level+inc)
-        dspace = space + space
-            for x,y in ((ks,d[ks]) for ks in sorted(d.keys())):
-            if usefilter:
-            if not (re.match(filter,x) or re.match(userfilter,x)):
-                filtered = True
-                continue
-            if isinstance(y,dict):
-                ret += '\n{}{}{}{}'.format(space,x,dspace,str(print_dict_ordered(y,level+inc)))
-            else:
-                ret += '\n{}{} -> {}'.format(space,x,y)
-        if filtered:
-            return '{}\nWARNING THIS IS FILTERED DATA, REMOVE FILTER TO VIEW FULL DATA\n'.format(ret)
-        else:
-                return ret
-        except Exception as e:
-        import traceback
-        print('{},\n{}'.format(e,traceback.print_exc()))
+            try:
+                filtered = False
+                ret = ''
+                inc = 4
+                space = ' '*(level+inc)
+                dspace = space + space
+                for x,y in ((ks,d[ks]) for ks in sorted(d.keys())):
+                    if usefilter:
+                        if not (re.match(filter,x) or re.match(userfilter,x)):
+                            filtered = True
+                            continue
+                    if isinstance(y,dict):
+                        ret += '\n{}{}{}{}'.format(space,x,dspace,str(print_dict_ordered(y,level+inc)))
+                    else:
+                        ret += '\n{}{} -> {}'.format(space,x,y)
+                if filtered:
+                    return '{}\nWARNING THIS IS FILTERED DATA, REMOVE FILTER TO VIEW FULL DATA\n'.format(ret)
+                else:
+                    return ret
+            except Exception as e:
+                import traceback
+                print('{},\n{}'.format(e,traceback.print_exc()))
 
         if DEBUG:
             print('init normalize')
@@ -776,16 +776,16 @@ class QuotaManager:
             print('quotas from fs (raw) (absolute values) {}'.format(print_dict_ordered(quotas)))
         qdict = {}
 
-    def abs_to_relative(soft,hard):
-        hard=self.normalize_units(hard)
-        soft=self.normalize_units(soft)
-        if hard - soft < 0:
-        soft = hard
-        margin = hard - soft
-        return {'quota': soft,'margin':margin}
+        def abs_to_relative(soft,hard):
+            hard=self.normalize_units(hard)
+            soft=self.normalize_units(soft)
+            if hard - soft < 0:
+                soft = hard
+            margin = hard - soft
+            return {'quota': soft,'margin':margin}
 
         for quotauser in quotas:
-        qdict.setdefault(quotauser,abs_to_relative(quotas[quotauser]['spacesoftlimit'],quotas[quotauser]['spacehardlimit']))
+            qdict.setdefault(quotauser,abs_to_relative(quotas[quotauser]['spacesoftlimit'],quotas[quotauser]['spacehardlimit']))
 
         if DEBUG:
             print('qdict (quotas from fs (not absolute values)) {}'.format(print_dict_ordered(qdict)))
@@ -850,11 +850,11 @@ class QuotaManager:
         try:
             for user in userinfo:
                 utmp=user
-        if user in qdict:
-            if int(quotas[user]['spacesoftlimit']) != int(userinfo[user]['normquota']['soft']) or int(quotas[user]['spacehardlimit']) != int(userinfo[user]['normquota']['hard']):
-            if DEBUG:
-                print('MODIFY USER {} ({},{}) vs ({},{})'.format(user,quotas[user]['spacesoftlimit'],quotas[user]['spacehardlimit'],userinfo[user]['normquota']['soft'],userinfo[user]['normquota']['hard']))
-            qdict2.setdefault(user,abs_to_relative(userinfo[user]['normquota']['soft'],userinfo[user]['normquota']['hard']))
+                if user in qdict:
+                    if int(quotas[user]['spacesoftlimit']) != int(userinfo[user]['normquota']['soft']) or int(quotas[user]['spacehardlimit']) != int(userinfo[user]['normquota']['hard']):
+                        if DEBUG:
+                            print('MODIFY USER {} ({},{}) vs ({},{})'.format(user,quotas[user]['spacesoftlimit'],quotas[user]['spacehardlimit'],userinfo[user]['normquota']['soft'],userinfo[user]['normquota']['hard']))
+                        qdict2.setdefault(user,abs_to_relative(userinfo[user]['normquota']['soft'],userinfo[user]['normquota']['hard']))
                 #if userinfo[user]['quota']['quota'] == 0:
                 #    if user in qdict and qdict[user]['quota'] != userinfo[user]['quota']['quota']:
                 #        qdict2.setdefault(user,{'quota':0,'margin':0})
@@ -1339,7 +1339,7 @@ class QuotaManager:
 
     def apply_quotasdict(self,quotadict):
         if DEBUG:
-        print('Applying quotas for users {}'.format(quotadict.keys()))
+            print('Applying quotas for users {}'.format(quotadict.keys()))
         for user in quotadict:
             self.set_userquota(user,quotadict[user]['quota'],quotadict[user]['margin'],persistent=False)
 
