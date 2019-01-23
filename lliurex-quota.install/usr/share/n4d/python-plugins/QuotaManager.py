@@ -17,7 +17,7 @@ import inspect
 # -If it's a client must be n4d call to check quotas (not necesary to set quotas)
 #
 
-DEBUG = True
+DEBUG = False
 
 class QuotaManager:
     def __init__(self):
