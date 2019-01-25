@@ -12,6 +12,12 @@ def exit(signum, frame):
     print('{}Aborting...{}'.format('\r'*10,''))
     sys.exit(1)
 
+def check_superuser():
+    uid = os.getuid()
+    if (uid != 0):
+        print('Need permission!')
+        sys.exit(1)
+
 if __name__=='__main__':
 
     signal.signal(signal.SIGINT,exit)
@@ -68,6 +74,7 @@ if __name__=='__main__':
     if args.configure_serversync:
         if c is None: # direct call, no need n4d call
             if qm:
+                check_superuser()
                 print(qm.configure_net_serversync())
             else:
                 print('Error QuotaManager not available, aborting')
@@ -81,6 +88,7 @@ if __name__=='__main__':
     if args.deconfigure_serversync:
         if c is None:
             if qm:
+                check_superuser()
                 print(qm.deconfigure_net_serversync())
             else:
                 print('Error QuotaManager not available, aborting')
@@ -119,6 +127,7 @@ if __name__=='__main__':
     if args.set_enabled:
         if c is None:
             if qm:
+                check_superuser()
                 print(qm.set_status(True))
             else:
                 print('Error QuotaManager not available, aborting')
@@ -132,6 +141,7 @@ if __name__=='__main__':
     if args.set_disabled:
         if c is None:
             if qm:
+                check_superuser()
                 print(qm.set_status(False))
             else:
                 print('Error QuotaManager not available, aborting')
@@ -145,6 +155,7 @@ if __name__=='__main__':
     if args.start_quotas:
         if c is None:
             if qm:
+                check_superuser()
                 print(qm.start_quotas())
             else:
                 print('Error QuotaManager not available, aborting')
@@ -158,6 +169,7 @@ if __name__=='__main__':
     if args.stop_quotas:
         if c is None:
             if qm:
+                check_superuser()
                 print(qm.stop_quotas())
             else:
                 print('Error QuotaManager not available, aborting')
@@ -200,6 +212,7 @@ if __name__=='__main__':
         ret = None
         if c is None:
             if qm:
+                check_superuser()
                 ret=qm.get_quotas()
             else:
                 print('Error QuotaManager not available, aborting')
@@ -234,6 +247,7 @@ if __name__=='__main__':
             margin = margin[0]
         if c is None:
             if qm:
+                check_superuser()
                 print(qm.set_userquota(user,quota,margin))
             else:
                 print('Error QuotaManager not available, aborting')
@@ -250,6 +264,7 @@ if __name__=='__main__':
             user = user[0]
         if c is None:
             if qm:
+                check_superuser()
                 print(qm.get_userquota(user))
             else:
                 print('Error QuotaManager not available, aborting')
