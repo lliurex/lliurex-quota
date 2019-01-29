@@ -1449,7 +1449,6 @@ class QuotaManager:
         ret['local']['running_system'] = self.detect_running_system()
         ret['local']['use_nfs'] = self.detect_nfs_mount()
         try:
-            print('RES --> {}'.format(self.detect_status_folder('/net/server-sync')))
             ret['remote']['status_serversync'],fs,mount = self.detect_status_folder('/net/server-sync')
             try:
                 ret['remote']['status_quotas'] = self.check_active_quotas(fs)
