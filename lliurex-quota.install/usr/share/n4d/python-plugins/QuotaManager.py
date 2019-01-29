@@ -21,6 +21,7 @@ DEBUG = False
 
 class QuotaManager:
     def __init__(self):
+        self.functions_need_root = ['get_quotas','get_userquota','set_userquota','set_status','configure_net_serversync','deconfigure_net_serversync','start_quotas','stop_quotas']
         self.fake_client = False
         self.type_client = None
         self.client = None
@@ -33,9 +34,12 @@ class QuotaManager:
     def set_credentials(self,user,pwd):
         self.auth=(user,pwd)
 
-    def get_client(self):
+    def get_client(self,xmlrpc=None):
+        if xmlrpc != None and DEBUG:
+            print('Getting client overriding xmlrpc to: {}'.format(xmlrpc))
+            self.client = None
         if type(self.client) == type(None):
-            self.client = self.init_client()
+            self.client = self.init_client(xmlrpc)
             #self.n4d_key = self.get_n4d_key()
         return self.client
 
@@ -71,12 +75,25 @@ class QuotaManager:
                     exceptions_function_cut_expansion = ['detect_remote_nfs_mount']
                 else:
                     exceptions_function_cut_expansion = []
+
+                rpcserver=None # auto-mode
+                if self.fake_client and func.__name__ in self.functions_need_root:
+                    if os.getuid() != 0:
+                        self.fake_client = False
+                        rpcserver='http://127.0.0.1:9779' # manual-mode
+                        if DEBUG:
+                            print('Overriding fake mode')
+
                 if self.fake_client or func.__name__ in exceptions_function_cut_expansion:
                     if DEBUG:
-                        print('running fake mode')
-                    return func(self,*args,**kwargs)
+                        print('Running fake mode')
+                    ret = func(self,*args,**kwargs)
+                    if DEBUG:
+                        print('Result from {}:\n{}\n'.format(func.__name__,ret))
                 else:
-                    self.client = self.get_client()
+                    if DEBUG:
+                        print('Running xmlrpc mode')
+                    self.client = self.get_client(xmlrpc=rpcserver)
                     try:
                         self.client.listMethods()
                         #
@@ -109,8 +126,8 @@ class QuotaManager:
                         print('calling {} with params {}'.format(func.__name__,params))
                     ret = getattr(self.client,func.__name__)(*params)
                     if DEBUG:
-                        print('returning {}'.format(ret))
-                    return ret
+                        print('Result from {}:\n{}\n'.format(func.__name__,ret))
+                return ret
             if DEBUG:
                 print 'created wrapper {} {}'.format(args,kwargs)
             return wrapper(*args,**kwargs)
@@ -196,32 +213,86 @@ class QuotaManager:
         self.type_client = type_client
         return type_client
 
-    def init_client(self):
+    def get_ip_addr_valid(self,ip_url):
+        def is_ip(ip):
+            iplist=re.findall(r'(\d+\.\d+\.\d+\.\d)',ip)
+            if not iplist:
+                return False
+            if len(iplist) != 1:
+                return False
+            ip=iplist[0]
+            iplist = ip.split('.')
+            if len(iplist) != 4:
+                return False
+            for x in iplist:
+                if int(x) > 255:
+                    return False
+            return '.'.join(iplist)
+        def get_valid_ip_from_dns(url):
+            if 'http' in url[0:4]:
+                url=url.split('//')
+                if len(url) < 2:
+                    return False
+                url=url[1]
+            t = url.split('/')
+            url = t[0]
+            try:
+                ip=socket.gethostbyname(url)
+            except:
+                return False
+            return ip
+
         try:
-            type = self.detect_running_system()
-        except Exception as e:
-            if DEBUG:
-                print('Exception initiating client, {}'.format(e))
-        url = ''
-        reachable = True
-        if type == 'master':
-            url = 'fake'
-        elif type == 'independent':
-            url = 'fake'
-        elif type == 'slave':
-            url = 'https://10.3.0.254:9779'
-            if not self.check_ping('10.3.0.254'):
-                print('Nfs master server is not reachable!')
-                reachable = False
+            ip_url = is_ip(ip_url)
+            if ip_url:
+                ip = ip_url
+            else:
+                try:
+                    ip = get_valid_ip_from_dns(ip_url)
+                except Exception as e:
+                    raise Exception("Error translating ip '{}',{}".format(ip_url,e))
+                if not ip:
+                    raise Exception("Error translating ip '{}'".format(ip_url))
+            if self.check_ping(ip):
+                return ip
+            else:
+                raise Exception("'{}' is unreachable".format(ip_url))
+        except:
+            raise Exception("Error translating ip '{}'".format(ip_url))
+
+    def init_client(self,xmlrpc=None):
+        if xmlrpc:
+            # sanitize
+            xmlrpc = str(xmlrpc).lower()
+            try:
+                ip = self.get_ip_addr_valid(xmlrpc)
+            except Exception as e:
+                raise Exception('Can\'t create xml client, {}, {}'.format(xmlrpc,e))
+            url = 'https://' + str(ip) +':9779'
         else:
             try:
-                srv_ip = socket.gethostbyname('server')
-                if not self.check_ping(srv_ip):
-                    print('server {} is not reachable!'.format(srv_ip))
-                    reachable = False
-            except:
-                srv_ip = None
-            url = 'https://'+str(srv_ip)+':9779'
+                type = self.detect_running_system()
+            except Exception as e:
+                if DEBUG:
+                    print('Exception initiating client, {}'.format(e))
+            url = ''
+            if type == 'master':
+                url = 'fake'
+            elif type == 'independent':
+                url = 'fake'
+            elif type == 'slave':
+                url = 'https://10.3.0.254:9779'
+                if not self.check_ping('10.3.0.254'):
+                    print('Nfs master server is not reachable!')
+            else:
+                try:
+                    srv_ip = socket.gethostbyname('server')
+                    if not self.check_ping(srv_ip):
+                        print('server {} is not reachable!'.format(srv_ip))
+                except:
+                    srv_ip = None
+                url = 'https://'+str(srv_ip)+':9779'
+
         self.n4d_server = url
         client = None
         if (url == 'fake'):
@@ -510,7 +581,10 @@ class QuotaManager:
             with open(file,'rb') as fpr:
                 with open(file+'_bkp_'+ts,'wb') as fpw:
                     fpw.write(fpr.read())
-        self.activate('quotaoff')
+        try:
+            self.activate('quotaoff')
+        except Exception as e:
+            print('Fail deactivating quotas {}'.format(e))
         for target in targets:
             try:
                 self.remount(target['mountpoint'],forceumount=False)
@@ -524,7 +598,10 @@ class QuotaManager:
             os.unlink(file)
         quota_mounts = self.get_mounts_with_quota()
         if quota_mounts:
-            self.activate('quotaon')
+            try:
+                self.activate('quotaon')
+            except Exception as e:
+                print('Fail activating quotas, {}'.format(e))
         return True
 
     def remount(self,mount='all',forceumount=False):
@@ -649,7 +726,10 @@ class QuotaManager:
                     fp.write('{alias}\t{mountpoint}\t{type}\t{options}\t{dump}\t{pass}\n'.format(**target))
         for target in targets:
             self.remount(target['mountpoint'])
-        self.activate('quotaoff')
+        try:
+            self.activate('quotaoff')
+        except Exception as e:
+            print('Fail deactivating quotas {}'.format(e))
         for target in targets:
             try:
                 out=subprocess.check_output(['quotacheck','-vguma'],stderr=subprocess.STDOUT)
@@ -660,8 +740,11 @@ class QuotaManager:
                     raise SystemError('Error trying to check initial quotas on {}, {}'.format(target['fs'],e))
             except Exception as e:
                 raise SystemError('Error trying to check initial quotas on {}, {}'.format(target['fs'],e))
-        self.activate('quotaon')
-        self.activate('quotarpc')
+        try:
+            self.activate('quotaon')
+            self.activate('quotarpc')
+        except Exception as e:
+            print('Fail activating quotas {}'.format(e))
         return True
 
     def get_system_users(self):
@@ -1228,7 +1311,7 @@ class QuotaManager:
             raise SystemError('Error checking rpcinfo, {}'.format(e))
         return True if 'rquotad' in rpcinfo else False
 
-    def activate(self, type):
+    def activate(self, type, silent=False):
         scripts_path = '/usr/share/quota/'
         types = {
                 'quotaon': {'script': scripts_path + 'quotaon.sh', 'checker': self.check_quotas_status, 'args': {'status':{'user':'on','group':'on','project':'off'},'device':'all','quotatype':['user','group']} },     # todo: check/handle project quotas
@@ -1237,6 +1320,8 @@ class QuotaManager:
                 }
         if type not in types.keys():
             raise ValueError('{} not valid type for activation'.format(type))
+        if silent:
+            types[type]['checker']=None
         try:
             self.activate_script(types[type])
         except Exception as e:
@@ -1252,27 +1337,39 @@ class QuotaManager:
                 print("ERROR ACTIVATING '{}', '{}', '{}'".format(type,e,traceback.print_exc()))
 
     def activate_script(self, script):
-        checker = script['checker']
+        checker = script['checker'] if 'checker' in script else None
         args = script['args'] if 'args' in script else None
         name = script['script']
-        if args:
-            res = checker(**args)
-        else:
-            res = checker()
+
+        res = None
+        if checker:
+            if args:
+                res = checker(**args)
+            else:
+                res = checker()
+            if DEBUG:
+                print('Testing activation of {} against {} with result {}'.format(name,args,res))
 
         if not res:
             if not os.path.isfile(name):
                 raise ValueError('{} not found'.format(name))
             try:
                 subprocess.call([name], shell=True, stderr=open(os.devnull,'w'), stdout=open(os.devnull,'w'))
+                if DEBUG:
+                    print('Successfully executed {}'.format(name))
             except Exception as e:
+                if DEBUG:
+                    print('Execution of {} Fail, {}'.format(name,e))
                 raise SystemError('Error calling {}'.format(name))
-            if args:
-                res = checker(**args)
-            else:
-                res = checker()
-            if not res:
-                raise SystemError('Error trying to activate {}'.format(name))
+            if checker:
+                if args:
+                    res = checker(**args)
+                else:
+                    res = checker()
+                if DEBUG:
+                    print('Final testing for activation of {} against {} with result {}'.format(name,args,res))
+                if not res:
+                    raise SystemError('Error trying to activate {}'.format(name))
         return True
         
     def sync_quotas(self,*args,**kwargs):
@@ -1352,13 +1449,15 @@ class QuotaManager:
         ret['local']['running_system'] = self.detect_running_system()
         ret['local']['use_nfs'] = self.detect_nfs_mount()
         try:
+            print('RES --> {}'.format(self.detect_status_folder('/net/server-sync')))
             ret['remote']['status_serversync'],fs,mount = self.detect_status_folder('/net/server-sync')
             try:
                 ret['remote']['status_quotas'] = self.check_active_quotas(fs)
             except Exception as e:
                 ret['remote']['status_quotas'] = 'Fail checking if quotas are active on filesystem {}, {}'.format(fs,e)
         except Exception as e:
-            ret['remote']['status_serversync']='Fail checking if /net/server-sync are configured, i will use \'all\' as device to check if quotas are active {}'.format(e)
+            import traceback
+            ret['remote']['status_serversync']='Fail checking if /net/server-sync are configured, i will use \'all\' as device to check if quotas are active, {}, {}'.format(e,traceback.print_exc())
             try:
                 ret['remote']['status_quotas'] = self.check_active_quotas(fs)
             except Exception as e2:
@@ -1434,8 +1533,9 @@ class QuotaManager:
         self.activate('quotaoff')
         ret = self.unset_mount_with_quota(mount)
         self.set_status_file(False)
+        # activate other quotas
         try:
-            self.activate('quotaon')
+            self.activate('quotaon',silent=True)
         except:
             pass
         return ret
