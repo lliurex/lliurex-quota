@@ -187,14 +187,19 @@ if __name__=='__main__':
             else:
                 print('No return')
         else:
-            for user in sorted([u for u in ret]):
-                a='{:15}'.format('quota')
-                b='{:15}'.format('margin')
-                print('{:20}{:15}{:10}{:15}'.format(user,a,' ',b))
-                a='{quota:>15}'.format(**ret[user])
-                b='{margin:>15}'.format(**ret[user])
-                print('{:10}{:15} {:10}{:15}'.format(' ',a,' ',b))
-            print('')
+            to_print=''
+            try:
+                for user in sorted([u for u in ret]):
+                    a='{:15}'.format('quota')
+                    b='{:15}'.format('margin')
+                    to_print += '{:20}{:15}{:10}{:15}'.format(user,a,' ',b)
+                    a='{quota:>15}'.format(**ret[user])
+                    b='{margin:>15}'.format(**ret[user])
+                    to_print += '{:10}{:15} {:10}{:15}'.format(' ',a,' ',b)
+                to_print += '\n'
+                print(to_print)
+            except:
+                print('{}'.format(ret))
 
     if args.get_current_quotas:
         ret = None
@@ -215,14 +220,19 @@ if __name__=='__main__':
             else:
                 print('No return')
         else:
-            for user in sorted([u for u in ret]):
-                t1='{} {:>10} {:>10} {:>10} {:>10} {:>10}'.format('SPACE','status','used','soft','hard','grace')
-                t2='{} {:>10} {:>10} {:>10} {:>10} {:>10}'.format('FILES','status','used','soft','hard','grace')
-                print('{:20} {:>50} {:10} {:>50}'.format(user,t1,' ',t2))
-                a='{spacestatus:>10} {spaceused:>10} {spacesoftlimit:>10} {spacehardlimit:>10} {spacegrace:>10}'.format(**ret[user])
-                b='{filestatus:>10} {fileused:>10} {filesoftlimit:>10} {filehardlimit:>10} {filegrace:>10}'.format(**ret[user])
-                print('{:20} {:5} {:>50} {:10} {:5} {:>50} '.format(' ',' ',a,' ',' ',b))
-            print('')
+            to_print=''
+            try:
+                for user in sorted([u for u in ret]):
+                    t1='{} {:>10} {:>10} {:>10} {:>10} {:>10}'.format('SPACE','status','used','soft','hard','grace')
+                    t2='{} {:>10} {:>10} {:>10} {:>10} {:>10}'.format('FILES','status','used','soft','hard','grace')
+                    to_print += '{:20} {:>50} {:10} {:>50}'.format(user,t1,' ',t2)
+                    a='{spacestatus:>10} {spaceused:>10} {spacesoftlimit:>10} {spacehardlimit:>10} {spacegrace:>10}'.format(**ret[user])
+                    b='{filestatus:>10} {fileused:>10} {filesoftlimit:>10} {filehardlimit:>10} {filegrace:>10}'.format(**ret[user])
+                    to_print += '{:20} {:5} {:>50} {:10} {:5} {:>50} '.format(' ',' ',a,' ',' ',b)
+                to_print += '\n'
+                print(to_print)
+            except:
+                print('{}'.format(ret))
 
     if args.set_quota:
         user,quota,margin = args.set_quota
