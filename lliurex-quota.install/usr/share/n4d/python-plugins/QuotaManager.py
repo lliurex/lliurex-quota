@@ -87,13 +87,22 @@ class QuotaManager:
                 if self.fake_client or func.__name__ in exceptions_function_cut_expansion:
                     if DEBUG:
                         print('Running fake mode')
-                    ret = func(self,*args,**kwargs)
+                    try:
+                        ret = func(self,*args,**kwargs)
+                    except Exception as e:
+                        print('Error calling {}, exception: {}'.format(func.__name__,e))
                     if DEBUG:
                         print('Result from {}:\n{}\n'.format(func.__name__,ret))
                 else:
                     if DEBUG:
                         print('Running xmlrpc mode')
-                    self.client = self.get_client(xmlrpc=rpcserver)
+                    try:
+                        self.client = self.get_client(xmlrpc=rpcserver)
+                    except Exception as e:
+                        if rpcserver:
+                            print('Exception when getting a client with custom rpcserver({}), {}'.format(rpcserver,e))
+                        else:
+                            print('Exception when getting a client, {}'.format(e))
                     try:
                         self.client.listMethods()
                         #
@@ -144,7 +153,11 @@ class QuotaManager:
 
     @proxy
     def detect_remote_nfs_mount(self,mount='/net/server-sync'):
-        return self.detect_nfs_mount(mount)
+        try:
+            return self.detect_nfs_mount(mount)
+        except Exception as e:
+            print('Error detecting nfs mount, {}'.format(e))
+            return None
 
     def detect_nfs_mount(self,mount='/net/server-sync'):
         try:
@@ -161,11 +174,15 @@ class QuotaManager:
             raise SystemError('Error detecting nfs mount {}, {}'.format(mount,e))
 
     def any_slave(self,ips=[]):
-        truncated = [ '.'.join(ip.split('.')[0:2]) for ip in ips ]
-        if '10.3' in truncated:
-            return True
-        else:
-            return False
+        try:
+            truncated = [ '.'.join(ip.split('.')[0:2]) for ip in ips ]
+            if '10.3' in truncated:
+                return True
+            else:
+                return False
+        except Exception as e:
+            print('Exception checking slave network, {}'.format(e))
+            return None
 
     def detect_running_system(self):
         if self.type_client:
@@ -187,22 +204,19 @@ class QuotaManager:
             self.fake_client = True
             type_client = 'master'
         elif srv_ip in iplist: # is something like a server, dns 'server' is assigned to me
-            if self.any_slave(iplist): # classroom range 10.3.X.X
-                if self.detect_nfs_mount(): # nfs mounted or not
-                    type_client = 'slave'
-                    self.fake_client = False
-                    #Moved to caller functions
-                    #if self.check_ping('10.3.0.254'): # available
-                    #    type_client = 'slave'
-                    #    self.fake_client = False
-                    #else: # not available
-                    #    raise Exception('Nfs master server is not reachable!')
+            try:
+                if self.any_slave(iplist): # classroom range 10.3.X.X
+                    if self.detect_nfs_mount(): # nfs mounted or not
+                        type_client = 'slave'
+                        self.fake_client = False
+                    else:
+                        self.fake_client = True
+                        type_client = 'independent'
                 else:
                     self.fake_client = True
                     type_client = 'independent'
-            else: 
-                self.fake_client = True
-                type_client = 'independent'
+            except Exception as e:
+                print('Exception checking type of server, {}'.format(e))
         elif srv_ip is not None: # dns 'server' is known but is not assigned to me, maybe i am a client
             type_client = 'client'
             self.fake_client = False
@@ -214,6 +228,7 @@ class QuotaManager:
         return type_client
 
     def get_ip_addr_valid(self,ip_url):
+        # check & return ip format with or without https
         def is_ip(ip):
             iplist=re.findall(r'(\d+\.\d+\.\d+\.\d)',ip)
             if not iplist:
@@ -228,6 +243,8 @@ class QuotaManager:
                 if int(x) > 255:
                     return False
             return '.'.join(iplist)
+
+        # check url and get valid ip address
         def get_valid_ip_from_dns(url):
             if 'http' in url[0:4]:
                 url=url.split('//')
@@ -261,7 +278,7 @@ class QuotaManager:
             raise Exception("Error translating ip '{}'".format(ip_url))
 
     def init_client(self,xmlrpc=None):
-        if xmlrpc:
+        if xmlrpc: # custom rpc server, this case is used by user permission calls on the fs that need to be routed through rpc calls
             # sanitize
             xmlrpc = str(xmlrpc).lower()
             try:
@@ -269,7 +286,7 @@ class QuotaManager:
             except Exception as e:
                 raise Exception('Can\'t create xml client, {}, {}'.format(xmlrpc,e))
             url = 'https://' + str(ip) +':9779'
-        else:
+        else: # automatic discovering where does the method need to be called 
             try:
                 type = self.detect_running_system()
             except Exception as e:
@@ -277,11 +294,11 @@ class QuotaManager:
                     print('Exception initiating client, {}'.format(e))
             url = ''
             if type == 'master':
-                url = 'fake'
-            elif type == 'independent':
-                url = 'fake'
-            elif type == 'slave':
-                url = 'https://10.3.0.254:9779'
+                url = 'fake'    # try to run directly without rpc
+            elif type == 'independent': # slaves without nfs mounted or independent servers
+                url = 'fake'    # try to run directly without rpc
+            elif type == 'slave': # slave's routes his calls to master server
+                url = 'https://10.3.0.254:9779' # slave's routes through master server
                 if not self.check_ping('10.3.0.254'):
                     print('Nfs master server is not reachable!')
             else:
@@ -339,19 +356,27 @@ class QuotaManager:
     def detect_mount_from_path(self,ipath):
         if not os.path.exists(ipath):
             raise ValueError('Path not found')
-        mounts = self.get_fstab_mounts()
+        try:
+            mounts = self.get_fstab_mounts()
+        except Exception as e:
+            print('Error getting fstab mounts, {}'.format(e))
+            raise e
         out = None
         try:
             out = json.loads(subprocess.check_output(['findmnt','-J','-T',str(ipath)]))
             targetfs = out['filesystems'][0]['source']
             targetmnt = out['filesystems'][0]['target']
         except Exception as e:
-            print e
-        if targetfs in [ x['fs'] for x in mounts ]:
-            return targetfs, targetmnt
-        else:
-            raise LookupError('Filesystem {} not matched from readed fstab'.format(ipath))
-            return None
+            print('Error getting mount mapping, {}'.format(e))
+            raise e
+        try:
+            if targetfs in [ x['fs'] for x in mounts ]:
+                return targetfs, targetmnt
+            else:
+                raise LookupError('Filesystem {} not matched from readed fstab'.format(ipath))
+                return None
+        except Exception as e:
+            raise LoockupError('Error searching mount list, {}'.format(e))
 
     def get_comments(self, filename):
         if not os.path.isfile(filename):
@@ -1448,17 +1473,24 @@ class QuotaManager:
         ret = {'local':{},'remote':{}}
         ret['local']['running_system'] = self.detect_running_system()
         ret['local']['use_nfs'] = self.detect_nfs_mount()
+        status = None
         try:
-            ret['remote']['status_serversync'],fs,mount = self.detect_status_folder('/net/server-sync')
-            try:
-                ret['remote']['status_quotas'] = self.check_active_quotas(fs)
-            except Exception as e:
-                ret['remote']['status_quotas'] = 'Fail checking if quotas are active on filesystem {}, {}'.format(fs,e)
+            status = self.detect_status_folder('/net/server-sync')
+            if not isinstance(status,dict):
+                #raise Exception('Unknown return from detect_status_folder, {}'.format(status))
+                ret['remote']['status_serversync'] = status
+            else:
+                ret['remote']['status_serversync'] = status.get('done')
+                try:
+                    ret['remote']['status_quotas'] = self.check_active_quotas(status.get('fs'))
+                except Exception as e:
+                    ret['remote']['status_quotas'] = 'Fail checking if quotas are active on filesystem {}, {}'.format(status.get('fs'),e)
         except Exception as e:
             import traceback
-            ret['remote']['status_serversync']='Fail checking if /net/server-sync are configured, i will use \'all\' as device to check if quotas are active, {}, {}'.format(e,traceback.print_exc())
+            print('Fail checking if /net/server-sync are configured, i will use \'all\' as device to check if quotas are active, {}, {}'.format(e,traceback.print_exc()))
+            ret['remote']['status_serversync']= status
             try:
-                ret['remote']['status_quotas'] = self.check_active_quotas(fs)
+                ret['remote']['status_quotas'] = self.check_active_quotas(status.get('fs'))
             except Exception as e2:
                 try:
                     ret['remote']['status_quotas'] = self.check_active_quotas('all')
@@ -1478,17 +1510,23 @@ class QuotaManager:
 
     @proxy
     def detect_status_folder(self,folder):
-        qmounts = self.get_mounts_with_quota()
+        try:
+            qmounts = self.get_mounts_with_quota()
+        except Exception as e:
+            raise Exception('Error getting mounts with quota, {}'.format(e))
         mount=folder
         fs= '/'
-        fs,mount = self.detect_mount_from_path(folder)
+        try:
+            fs,mount = self.detect_mount_from_path(folder)
+        except Exception as e:
+            raise Exception('Error getting status folder, {}'.format(e))
         done=False
         if qmounts:
             for qm in qmounts:
                 if qm['mountpoint'] == mount:
                     fs = qm['fs']
                     done = True
-        return (done,fs,mount)
+        return {'done':done,'fs':fs,'mount':mount }
 
     @proxy
     def configure_net_serversync(self):
@@ -1503,15 +1541,23 @@ class QuotaManager:
         #            fs = qm['fs']
         #            done = True
         #            return True
-        done,fs,mount = self.detect_status_folder('/net/server-sync')
+        try:
+            status = self.detect_status_folder('/net/server-sync')
+        except Exception as e:
+            print('Error getting status of folder /net/server-sync, {}'.format(e))
+            status = None
+
+        if not isinstance(status, dict):
+            print('Error unknown type returned from detect_status_folder')
+            return None
 
         ret = None
-        if not done:
+        if not status.get('done'):
             self.set_status_file(True)
-            ret = self.set_mount_with_quota(fs)
-            self.remount(mount)
+            ret = self.set_mount_with_quota(status.get('fs'))
+            self.remount(status.get('mount'))
             self.check_quotaon()
-            self.check_quotas_status(status={'user':'on','group':'on','project':'off'},device=mount,quotatype=['user','group'])
+            self.check_quotas_status(status={'user':'on','group':'on','project':'off'},device=status.get('mount'),quotatype=['user','group'])
         return ret
 
     @proxy
