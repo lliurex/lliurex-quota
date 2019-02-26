@@ -6,6 +6,8 @@ import xmlrpclib
 import getpass
 import socket
 import time
+import pwd
+import grp
 
 from functools import wraps
 import inspect
@@ -109,10 +111,11 @@ class QuotaManager:
                         # TODO: check and emit warning if method used it's not configured as xmlrpc call
                         # missing into n4d conf file
                         #
-                    except ResponseNotReady as e:
-                        print('Couldn\'t create N4D client, aborting call ({}), {}'.format(func.__name__,e))
+                    #except ResponseNotReady as e:
+                    #    print('Couldn\'t create N4D client, aborting call ({}), {}'.format(func.__name__,e))
                     except Exception as e:
-                        print('Couldn\'t create N4D client, aborting call ({}),{}'.format(func.__name__,r))
+                        print('Couldn\'t create N4D client, aborting call ({}),{}'.format(func.__name__,e))
+                        return
                     if DEBUG:
                         print('running n4d mode with server {}'.format(self.n4d_server))
                     cparams=None
@@ -127,6 +130,9 @@ class QuotaManager:
                                 self.auth = cparams
                     if type(self.auth) == type(None):
                         self.auth = self.get_auth(func.__name__)
+                    if type(self.auth) == type(None):
+                        ret = "N4D doesn't provide this function, check n4d configuration"
+                        return ret
                     params = []
                     params.append(self.auth)
                     params.append('QuotaManager')
@@ -150,6 +156,20 @@ class QuotaManager:
         except:
             pass
         return ret
+    
+    def get_all_system_groups(self):
+        try:
+            return sorted(set([ x.gr_name for x in grp.getgrall() ]))
+        except Exception as e:
+            return []
+    
+    def get_users_group(self,group):
+        try:
+            return sorted(grp.getgrnam(group).gr_mem)
+        except KeyError as e:
+            return []
+        except Exception as e:
+            return str(e)
 
     @proxy
     def detect_remote_nfs_mount(self,mount='/net/server-sync'):
@@ -900,29 +920,52 @@ class QuotaManager:
         
         # qdict stores quotas readed from quota subsystem calling repquota, qdict represents actual quotas used by fs
         
+        sysgroups = self.get_all_system_groups();
+        emptygroups = {}
+        for x in sysgroups:
+            emptygroups.setdefault(x,{'margin':0,'quota':0})
+
         try:
             qfile = self.get_quotas_file()
             if qfile == {}:
-                self.set_quotas_file(qdict)
-                qfile = qdict
+                self.set_quotas_file({'users':qdict,'groups':emptygroups})
+                qfile = {'users': qdict,'groups': emptygroups}
         except:
-            self.set_quotas_file(qdict)
+            self.set_quotas_file({'users':qdict, 'groups':emptygroups})
             qfile = qdict
-            
+
         # qfile stores administrator configured quotas without normalization process
         
         users = self.get_system_users()
         for user in users:
-            if user not in qfile:
-                qfile[user] = {'quota':0,'margin':0}
+            if user not in qfile['users']:
+                qfile['users'].setdefault(user,{'quota':0,'margin':0})
+        for g in sysgroups:
+            if g not in qfile['groups']:
+                qfile['groups'].setdefault(g,{'quota':0,'margin':0})
         if DEBUG:
             print('qfile (quotas from/to configfile) {}'.format(print_dict_ordered(qfile)))
+        
+        # override the minium quota, user or group quota (mandatory)
+        
+        override_quotas = {}
+        for sg in sysgroups:
+            if qfile['groups'][sg]['quota'] != 0:
+                sgu = self.get_users_group(sg)
+                for ug in sgu:
+                    if ug in qfile['users'] and 'quota' in qfile['users'][ug]:
+                        if qfile['users'][ug]['quota'] == 0:
+                            override_quotas.setdefault(ug,qfile['groups'][sg]) 
+        if DEBUG:
+            print('Overriding quotas for user {}'.format(override_quotas.keys()))
         
         # begin normalization process
         
         userinfo = {}
-        for user in qfile:
-            userinfo.setdefault(user,{'quota':qfile[user],'normquota':{'hard':0,'soft':0}})
+        for user in qfile['users']:
+            userinfo.setdefault(user,{'quota':qfile['users'][user],'normquota':{'hard':0,'soft':0}})
+            if user in override_quotas:
+                userinfo[user]['quota']=override_quotas[user]
             dpath = self.get_moving_dir(user)
 
             try:
@@ -979,6 +1022,7 @@ class QuotaManager:
         
         if DEBUG:
             print('qdict2 (quotas updated) (if empty, none will be updated) {} \nEND\n'.format(print_dict_ordered(qdict2)))
+            print('Writing quotas file:\n{}'.format(qfile))
         self.set_quotas_file(qfile)
         self.apply_quotasdict(qdict2)
         return True
@@ -1124,6 +1168,16 @@ class QuotaManager:
             out = ';'.join(out)
         return out
 
+    def set_quota_group(self, group='', quota='0M', margin='0M'):
+        qfile = self.get_quotas_file()
+        nquota = self.normalize_units(quota);
+        nmargin = self.normalize_units(margin);
+        if group not in qfile['groups']:
+            qfile['groups'].setdefault(group,{'quota':nquota,'margin':nmargin});
+        else:
+            qfile['groups'][group]={'quota':nquota,'margin':nmargin}
+        self.set_quotas_file(qfile)
+
     def set_quota_user(self, user='all', quota='0M', margin='0M', mount='all', filterbygroup=['teachers', 'students'], persistent=True):
         userlist = self.get_system_users()
         groups = self.get_system_groups()
@@ -1192,8 +1246,8 @@ class QuotaManager:
                         raise SystemError('Error setting quota on {} = margin({}) quota({}) for user {}, {}'.format(mount,margin,quota,user,e))
                 except Exception as e:
                     raise SystemError('Error setting quota on {} = margin({}) quota({}) for user {}, {}'.format(mount,margin,quota,user,e))
-            if persistent and useritem in qfile:
-                qfile[useritem] = {'quota':quota,'margin':margin}
+            if persistent and useritem in qfile['users']:
+                qfile['users'][useritem] = {'quota':quota,'margin':margin}
         if persistent:
             self.set_quotas_file(qfile)
         return True
@@ -1456,6 +1510,17 @@ class QuotaManager:
         #print 'setting {} = {}'.format(user,quota)
         try:
             return self.set_quota_user(user=user,quota=quota,margin=margin,**kwargs)
+        except Exception as e:
+            return str(e)
+
+    @proxy
+    def set_groupquota(self,group,quota,*args,**kwargs):
+        if len(args) == 0:
+            margin = 0
+        else:
+            margin = args[0]
+        try:
+            return self.set_quota_group(group=group,quota=quota,margin=margin,**kwargs)
         except Exception as e:
             return str(e)
 

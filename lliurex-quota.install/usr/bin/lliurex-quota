@@ -37,6 +37,7 @@ if __name__=='__main__':
     g.add_argument('-ga','--get-current-quotas',metavar='',action='store_const',help='Get current applied quotas',const=True)
 
     g.add_argument('-sq','--set-quota',metavar=('USER','QUOTAVALUE','MARGINVALUE'),nargs=3,help='Set quota for user')
+    g.add_argument('-sgq','--set-group-quota',metavar=('GROUPNAME','QUOTAVALUE','MARGINVALUE'),nargs=3,help='Set quota for group')
     g.add_argument('-gq','--get-quota',metavar='USER',nargs=1,help='Get quota for user')
 
     args = parser.parse_args()
@@ -189,17 +190,28 @@ if __name__=='__main__':
         else:
             to_print=''
             try:
-                for user in sorted([u for u in ret]):
-                    a='{:15}'.format('quota')
-                    b='{:15}'.format('margin')
-                    to_print += '{:20}{:15}{:10}{:15}\n'.format(user,a,' ',b)
-                    a='{quota:>15}'.format(**ret[user])
-                    b='{margin:>15}'.format(**ret[user])
-                    to_print += '{:10}{:15} {:10}{:15}\n'.format(' ',a,' ',b)
-                to_print += '\n'
+                if 'users' in ret:
+                    print('aa{}\n\n'.format(ret['users']))
+                    for user in sorted([u for u in ret['users']]):
+                        a='{:15}'.format('quota')
+                        b='{:15}'.format('margin')
+                        to_print += '{:20}{:15}{:10}{:15}\n'.format(user,a,' ',b)
+                        a='{quota:>15}'.format(**ret['users'][user])
+                        b='{margin:>15}'.format(**ret['users'][user])
+                        to_print += '{:10}{:15} {:10}{:15}\n'.format(' ',a,' ',b)
+                    to_print += '\n'
+                if 'groups' in ret:
+                    for g in sorted([g for g in ret['groups']]):
+                        a='{:15}'.format('quota')
+                        b='{:15}'.format('margin')
+                        to_print += '{:20}{:15}{:10}{:15}\n'.format('@'+g,a,' ',b)
+                        a='{quota:>15}'.format(**ret['groups'][g])
+                        b='{margin:>15}'.format(**ret['groups'][g])
+                        to_print += '{:10}{:15} {:10}{:15}\n'.format(' ',a,' ',b)
+                    to_print += '\n'
                 print(to_print)
-            except:
-                print('{}'.format(ret))
+            except Exception as e:
+                print('{}\n{}'.format(ret,e))
 
     if args.get_current_quotas:
         ret = None
@@ -251,6 +263,27 @@ if __name__=='__main__':
             try:
                 arguments=(auth,module,user,quota,margin)
                 print(c.set_userquota(*arguments))
+            except Exception as e:
+                print('Error rpc client not available, aborting, {}'.format(e))
+
+
+    if args.set_group_quota:
+        group,quota,margin = args.set_group_quota
+        if type(group) == type(list()):
+            group = group[0]
+        if type(quota) == type(list()):
+            quota = quota[0]
+        if type(margin) == type(list()):
+            margin = margin[0]
+        if c is None:
+            if qm:
+                print(qm.set_groupquota(group,quota,margin))
+            else:
+                print('Error QuotaManager not available, aborting')
+        else:
+            try:
+                arguments=(auth,module,group,quota,margin)
+                print(c.set_groupquota(*arguments))
             except Exception as e:
                 print('Error rpc client not available, aborting, {}'.format(e))
 
