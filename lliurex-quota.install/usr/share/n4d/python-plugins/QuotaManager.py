@@ -899,6 +899,8 @@ class QuotaManager:
 
         if DEBUG:
             print('init normalize')
+        
+        # FIRST PASS(A): GET QUOTAS APPLIED ON SYSTEM
         quotas = self.get_quotas(humanunits=False)
         if DEBUG:
             print('quotas from fs (raw) (absolute values) {}'.format(print_dict_ordered(quotas)))
@@ -912,6 +914,7 @@ class QuotaManager:
             margin = hard - soft
             return {'quota': soft,'margin':margin}
 
+        # FIRST PASS(B): STORE QUOTAS INTO DICT
         for quotauser in quotas:
             qdict.setdefault(quotauser,abs_to_relative(quotas[quotauser]['spacesoftlimit'],quotas[quotauser]['spacehardlimit']))
 
@@ -920,11 +923,21 @@ class QuotaManager:
         
         # qdict stores quotas readed from quota subsystem calling repquota, qdict represents actual quotas used by fs
         
+        # SECOND PASS(A): GET ALL GROUPS AND STORE DEFAULT EMPTY QUOTAS FOR ALL ITEM (GROUP)
         sysgroups = self.get_all_system_groups();
         emptygroups = {}
+        users_into_groups = {}
         for x in sysgroups:
             emptygroups.setdefault(x,{'margin':0,'quota':0})
-
+            # SECOND PASS(B): BUILD DICT WITH USER->LIST GROUPS THAT IS MEMBER
+            sgu = self.get_users_group(x)
+            for user in sgu:
+                if user in users_into_groups:
+                    users_into_groups[user].append(x);
+                else:
+                    users_into_groups.setdefault(user,[x]);
+        
+        # THIRD PASS(A): GET ALL QUOTAS CONFIGURED FROM APPLICATION OR BUILD NEW FILE WITH DEFAULT QUOTAS
         try:
             qfile = self.get_quotas_file()
             if qfile == {}:
@@ -936,6 +949,7 @@ class QuotaManager:
 
         # qfile stores administrator configured quotas without normalization process
         
+        # THIRD PASS(B): ADD POSSIBLE USER/GROUP DIFERENCES INTO DICT THAT REPRESENTS FILE AND ASSING DEFAULT QUOTAS
         users = self.get_system_users()
         for user in users:
             if user not in qfile['users']:
@@ -948,18 +962,31 @@ class QuotaManager:
         
         # override the minium quota, user or group quota (mandatory)
         
+        # FOURTH PASS: CALCULATE USER QUOTAS TO BE APPLIED FUNCTION OF MEMBER OF GROUPS
+        # IF IT IS MEMBER OF TWO GROUPS: UPPER LIMIT IS APPLIED
+        # IF IT HAS USER QUOTA: GROUP QUOTA IS NOT APPLIED
         override_quotas = {}
-        for sg in sysgroups:
-            if qfile['groups'][sg]['quota'] != 0:
-                sgu = self.get_users_group(sg)
-                for ug in sgu:
-                    if ug in qfile['users'] and 'quota' in qfile['users'][ug]:
-                        if qfile['users'][ug]['quota'] == 0:
-                            override_quotas.setdefault(ug,qfile['groups'][sg]) 
+        for sys_group in sysgroups:
+            if qfile['groups'][sys_group]['quota'] != 0:
+                userlist_from_sys_group = self.get_users_group(sys_group)
+                for user_from_sysgroup in userlist_from_sys_group:
+                    mandatory_group = sys_group
+                    # SEARCH OTHER GROUPS WITH GREATER QUOTA
+                    if user_from_sysgroup in users_into_groups: 
+                        for group_of_user in users_into_groups[user_from_sysgroup]:
+                            if group_of_user in qfile['groups'] and 'quota' in qfile['groups'][group_of_user]:
+                                if qfile['groups'][group_of_user]['quota'] != 0 and qfile['groups'][group_of_user]['quota'] > qfile['groups'][sys_group]['quota']:
+                                    mandatory_group = group_of_user
+                    # SEARCH IF PERSONAL QUOTA IS APPLIED
+                    if user_from_sysgroup in qfile['users'] and 'quota' in qfile['users'][user_from_sysgroup]:
+                        if qfile['users'][user_from_sysgroup]['quota'] == 0: # IF USER QUOTA APPLIED OVERRIDE WILL NOT BE DONE
+                            override_quotas.setdefault(user_from_sysgroup,qfile['groups'][mandatory_group]) 
         if DEBUG:
             print('Overriding quotas for user {}'.format(override_quotas.keys()))
         
         # begin normalization process
+        # FIFTH PASS: NORMALIZE QUOTA & MARGIN VALUES 
+        # FIFTH PASS: CHECK DATA DUPLICATION DUE TO MOVING PROFILES 
         
         userinfo = {}
         for user in qfile['users']:
@@ -1019,6 +1046,8 @@ class QuotaManager:
             return "{} {} {}".format(str(e),traceback.format_exc(),qdict[utmp])
         
         # qdict2 stores only quotas that must be updated
+        
+        # SIXTH PASS: WRITE CHANGES INTO FILE (IF NEW FILE OR NEW USERS/GROUPS DETECTED) AND APPLY FINAL QUOTAS FOR USERS
         
         if DEBUG:
             print('qdict2 (quotas updated) (if empty, none will be updated) {} \nEND\n'.format(print_dict_ordered(qdict2)))
@@ -1177,6 +1206,7 @@ class QuotaManager:
         else:
             qfile['groups'][group]={'quota':nquota,'margin':nmargin}
         self.set_quotas_file(qfile)
+        return True
 
     def set_quota_user(self, user='all', quota='0M', margin='0M', mount='all', filterbygroup=['teachers', 'students'], persistent=True):
         userlist = self.get_system_users()
@@ -1275,7 +1305,7 @@ class QuotaManager:
                 except:
                     pass
         if value == None:
-            raise TypeError('Unknown unit when normalize')
+            raise TypeError('Unknown unit when normalize {}'.format(quotavalue))
         return value
 
     @proxy
