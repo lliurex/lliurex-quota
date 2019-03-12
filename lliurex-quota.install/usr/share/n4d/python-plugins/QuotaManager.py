@@ -930,7 +930,7 @@ class QuotaManager:
         for x in sysgroups:
             emptygroups.setdefault(x,{'margin':0,'quota':0})
             # SECOND PASS(B): BUILD DICT WITH USER->LIST GROUPS THAT IS MEMBER
-            sgu = self.get_users_group(sg)
+            sgu = self.get_users_group(x)
             for user in sgu:
                 if user in users_into_groups:
                     users_into_groups[user].append(x);
