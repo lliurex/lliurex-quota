@@ -1206,6 +1206,7 @@ class QuotaManager:
         else:
             qfile['groups'][group]={'quota':nquota,'margin':nmargin}
         self.set_quotas_file(qfile)
+        self.normalize_quotas()
         return True
 
     def set_quota_user(self, user='all', quota='0M', margin='0M', mount='all', filterbygroup=['teachers', 'students'], persistent=True):
