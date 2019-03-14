@@ -1,3 +1,9 @@
+lliurex-quota (0.1.3.11) bionic; urgency=medium
+
+  * Bionic fixes
+
+ -- M.Angel Juan <m.angel.juan@gmail.com>  Thu, 14 Mar 2019 15:56:22 +0100
+
 lliurex-quota (0.1.3.10) bionic; urgency=medium
 
   * check greater group quota
