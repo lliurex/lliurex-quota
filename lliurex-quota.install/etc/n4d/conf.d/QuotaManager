@@ -18,3 +18,4 @@ detect_status_folder=adm,admin,admins
 check_active_quotas=adm,admin,admins
 detect_remote_nfs_mount=adm,admin,admins
 get_local_status=adm,admin,admins
+read_autofs_file=adm,admin,admins
