@@ -71,6 +71,7 @@ class QuotaManager:
 
             @wraps(func)
             def wrapper(*args,**kwargs):
+                ret = "CALLING ERROR"
                 if DEBUG:
                     print('into wrapper({}) {} {}'.format(func.__name__,args,kwargs))
                 if self.type_client == 'slave':
@@ -186,8 +187,13 @@ class QuotaManager:
                 return False
             nfsmounts_obj = json.loads(nfsmounts)
             parsed_nfsmounts = [ x.get('target') for x in nfsmounts_obj.get('filesystems',[]) ]
-            if mount and mount in parsed_nfsmounts:
-                return True
+            if mount:
+                if mount in parsed_nfsmounts:
+                    return True
+                for pnfs in parsed_nfsmounts:
+                    if pnfs.startswith(mount):
+                        return True
+                return False
             else:
                 return False
         except Exception as e:
@@ -396,7 +402,7 @@ class QuotaManager:
                 raise LookupError('Filesystem {} not matched from readed fstab'.format(ipath))
                 return None
         except Exception as e:
-            raise LoockupError('Error searching mount list, {}'.format(e))
+            raise LookupError('Error searching mount list, {}'.format(e))
 
     def get_comments(self, filename):
         if not os.path.isfile(filename):
@@ -819,7 +825,11 @@ class QuotaManager:
         file = 'quotas'
         filepath = folder + '/' + file
         if not os.path.isfile(filepath):
-            raise ValueError('Missing quotas file {}'.format(filepath))
+            try:
+                with open(filepath,'w') as fp:
+                    fp.write("{}\n")
+            except Exception as e:
+                raise ValueError('Missing quotas file {}, fail when creating {}'.format(filepath,e))
         try:
             with open(filepath,'r') as fp:
                 qinfo = json.load(fp)
@@ -1232,7 +1242,7 @@ class QuotaManager:
             else:
                 targetuser = userlist
         if not targetuser:
-            raise LoockupError('No users available to apply quota, called user={}'.format(user))
+            raise LookupError('No users available to apply quota, called user={}'.format(user))
         if not re.findall(r'\d+[KMG]?',str(quota)):
             raise ValueError('Invalid quota value, {}'.format(quota))
         quota = self.normalize_units(quota)
