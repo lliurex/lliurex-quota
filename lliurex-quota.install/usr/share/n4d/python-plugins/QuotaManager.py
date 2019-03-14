@@ -23,7 +23,7 @@ DEBUG = False
 
 class QuotaManager:
     def __init__(self):
-        self.functions_need_root = ['get_quotas','get_userquota','set_userquota','set_status','configure_net_serversync','deconfigure_net_serversync','start_quotas','stop_quotas']
+        self.functions_need_root = ['get_quotas','get_userquota','set_userquota','set_status','configure_net_serversync','deconfigure_net_serversync','start_quotas','stop_quotas','read_autofs_file']
         self.fake_client = False
         self.type_client = None
         self.client = None
@@ -75,7 +75,7 @@ class QuotaManager:
                 if DEBUG:
                     print('into wrapper({}) {} {}'.format(func.__name__,args,kwargs))
                 if self.type_client == 'slave':
-                    exceptions_function_cut_expansion = ['detect_remote_nfs_mount']
+                    exceptions_function_cut_expansion = ['detect_remote_nfs_mount','read_autofs_file']
                 else:
                     exceptions_function_cut_expansion = []
 
@@ -379,6 +379,31 @@ class QuotaManager:
                 iplist.append(m.group(1))
         return iplist
 
+    @proxy
+    def read_autofs_file(self,autofile):
+        if not os.path.exists(autofile):
+            raise ValueError('Autofs file not found')
+        contents = ""
+        try:
+            with open(autofile,'r') as fp:
+                contents = fp.readlines()
+            reg = "\s*[*]\s+.*\s+(\S+)&"
+            target = "ERROR"
+            no_match = True
+            for line in contents:
+                match = re.match(reg,line)
+                if match:
+                    target = match.group(1)
+                    no_match = False
+                    break
+            if no_match:
+                raise LookupError("Unable to parse {} (autofile)".format(autofile))
+            if target[-1] == '/':
+                target = target[:-1]
+            return target
+        except Exception as e:
+            raise e
+
     def detect_mount_from_path(self,ipath):
         if not os.path.exists(ipath):
             raise ValueError('Path not found')
@@ -390,8 +415,13 @@ class QuotaManager:
         out = None
         try:
             out = json.loads(subprocess.check_output(['findmnt','-J','-T',str(ipath)]))
-            targetfs = out['filesystems'][0]['source']
-            targetmnt = out['filesystems'][0]['target']
+            fstype = out['filesystems'][0]['fstype']
+            if fstype == "autofs":
+                targetfs = self.read_autofs_file(out['filesystems'][0]['source'])
+                targetmnt = out['filesystems'][0]['target']
+            if fstype and fstype != "autofs":
+                targetfs = out['filesystems'][0]['source']
+                targetmnt = out['filesystems'][0]['target']
         except Exception as e:
             print('Error getting mount mapping, {}'.format(e))
             raise e
