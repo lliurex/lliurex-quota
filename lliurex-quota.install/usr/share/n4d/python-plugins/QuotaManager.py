@@ -23,6 +23,7 @@ DEBUG = False
 
 class QuotaManager:
     def __init__(self):
+        # functions that never try to run natively without n4d, fake client not allowed
         self.functions_need_root = ['get_quotas','get_userquota','set_userquota','set_status','configure_net_serversync','deconfigure_net_serversync','start_quotas','stop_quotas','read_autofs_file']
         self.fake_client = False
         self.type_client = None
@@ -75,6 +76,7 @@ class QuotaManager:
                 if DEBUG:
                     print('into wrapper({}) {} {}'.format(func.__name__,args,kwargs))
                 if self.type_client == 'slave':
+                    # functions that can be done on ((if condition) slave machine), not need to proxy through master server
                     exceptions_function_cut_expansion = ['detect_remote_nfs_mount','read_autofs_file']
                 else:
                     exceptions_function_cut_expansion = []
@@ -157,13 +159,13 @@ class QuotaManager:
         except:
             pass
         return ret
-    
+
     def get_all_system_groups(self):
         try:
             return sorted(set([ x.gr_name for x in grp.getgrall() ]))
         except Exception as e:
             return []
-    
+
     def get_users_group(self,group):
         try:
             return sorted(grp.getgrnam(group).gr_mem)
@@ -180,8 +182,15 @@ class QuotaManager:
             print('Error detecting nfs mount, {}'.format(e))
             return None
 
+    def try_to_automount(self):
+        try:
+            subprocess.check_call(["bash -c 'cd /net/server-sync/home;ls'"],shell=True, stderr=open(os.devnull,'w'), stdout=open(os.devnull,'w'))
+        except:
+            pass
+
     def detect_nfs_mount(self,mount='/net/server-sync'):
         try:
+            self.try_to_automount()
             nfsmounts = subprocess.check_output(['findmnt','-J','-t','nfs'])
             if nfsmounts == '':
                 return False
