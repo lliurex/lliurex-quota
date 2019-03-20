@@ -958,7 +958,7 @@ class QuotaManager:
 
         if DEBUG:
             print('init normalize')
-        
+
         # FIRST PASS(A): GET QUOTAS APPLIED ON SYSTEM
         quotas = self.get_quotas(humanunits=False)
         if DEBUG:
@@ -979,9 +979,9 @@ class QuotaManager:
 
         if DEBUG:
             print('qdict (quotas from fs (not absolute values)) {}'.format(print_dict_ordered(qdict)))
-        
+
         # qdict stores quotas readed from quota subsystem calling repquota, qdict represents actual quotas used by fs
-        
+
         # SECOND PASS(A): GET ALL GROUPS AND STORE DEFAULT EMPTY QUOTAS FOR ALL ITEM (GROUP)
         sysgroups = self.get_all_system_groups();
         emptygroups = {}
@@ -995,7 +995,7 @@ class QuotaManager:
                     users_into_groups[user].append(x);
                 else:
                     users_into_groups.setdefault(user,[x]);
-        
+
         # THIRD PASS(A): GET ALL QUOTAS CONFIGURED FROM APPLICATION OR BUILD NEW FILE WITH DEFAULT QUOTAS
         try:
             qfile = self.get_quotas_file()
@@ -1007,7 +1007,7 @@ class QuotaManager:
             qfile = qdict
 
         # qfile stores administrator configured quotas without normalization process
-        
+
         # THIRD PASS(B): ADD POSSIBLE USER/GROUP DIFERENCES INTO DICT THAT REPRESENTS FILE AND ASSING DEFAULT QUOTAS
         users = self.get_system_users()
         for user in users:
@@ -1018,9 +1018,9 @@ class QuotaManager:
                 qfile['groups'].setdefault(g,{'quota':0,'margin':0})
         if DEBUG:
             print('qfile (quotas from/to configfile) {}'.format(print_dict_ordered(qfile)))
-        
+
         # override the minium quota, user or group quota (mandatory)
-        
+
         # FOURTH PASS: CALCULATE USER QUOTAS TO BE APPLIED FUNCTION OF MEMBER OF GROUPS
         # IF IT IS MEMBER OF TWO GROUPS: UPPER LIMIT IS APPLIED
         # IF IT HAS USER QUOTA: GROUP QUOTA IS NOT APPLIED
@@ -1042,11 +1042,11 @@ class QuotaManager:
                             override_quotas.setdefault(user_from_sysgroup,qfile['groups'][mandatory_group]) 
         if DEBUG:
             print('Overriding quotas for user {}'.format(override_quotas.keys()))
-        
+
         # begin normalization process
         # FIFTH PASS: NORMALIZE QUOTA & MARGIN VALUES 
         # FIFTH PASS: CHECK DATA DUPLICATION DUE TO MOVING PROFILES 
-        
+
         userinfo = {}
         for user in qfile['users']:
             userinfo.setdefault(user,{'quota':qfile['users'][user],'normquota':{'hard':0,'soft':0}})
@@ -1060,7 +1060,7 @@ class QuotaManager:
             # detected moving profile's possible duplicated data
 
                     userinfo[user]['moving_quota'] = self.get_user_space(folder=dpath,user=user)[user]
-            
+
             # real quota must ignore that (moving data) increase of size 
 
                     if DEBUG:
@@ -1079,9 +1079,9 @@ class QuotaManager:
                 return "{} {} {}".format(str(e),traceback.format_exc(),user)
         if DEBUG:
             print('userinfo (normalized data) {}'.format(print_dict_ordered(userinfo)))
-            
+
         # userinfo stores the quotas that should be applied to fs
-        
+
         qdict2 = {}
         utmp=''
         try:
@@ -1103,11 +1103,11 @@ class QuotaManager:
             if DEBUG:
                 "ERROR COMPARING QUOTAS {} {} {}".format(str(e),traceback.format_exc(),qdict[utmp])
             return "{} {} {}".format(str(e),traceback.format_exc(),qdict[utmp])
-        
+
         # qdict2 stores only quotas that must be updated
-        
+
         # SIXTH PASS: WRITE CHANGES INTO FILE (IF NEW FILE OR NEW USERS/GROUPS DETECTED) AND APPLY FINAL QUOTAS FOR USERS
-        
+
         if DEBUG:
             print('qdict2 (quotas updated) (if empty, none will be updated) {} \nEND\n'.format(print_dict_ordered(qdict2)))
             print('Writing quotas file:\n{}'.format(qfile))
@@ -1540,7 +1540,7 @@ class QuotaManager:
                 if not res:
                     raise SystemError('Error trying to activate {}'.format(name))
         return True
-        
+
     def sync_quotas(self,*args,**kwargs):
         current_detected = self.get_quotas(humanunits=False)
 
@@ -1713,6 +1713,7 @@ class QuotaManager:
             self.remount(status.get('mount'))
             self.check_quotaon()
             self.check_quotas_status(status={'user':'on','group':'on','project':'off'},device=status.get('mount'),quotatype=['user','group'])
+            self.normalize_quotas()
         return ret
 
     @proxy
