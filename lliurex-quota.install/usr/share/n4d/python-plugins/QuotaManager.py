@@ -438,6 +438,8 @@ class QuotaManager:
             if fstype == "autofs":
                 targetfs = self.read_autofs_file(out['filesystems'][0]['source'])
                 targetmnt = out['filesystems'][0]['target']
+                #if autofs: skips check with fstab
+                return targetfs,targetmnt
             if fstype and fstype != "autofs":
                 targetfs = out['filesystems'][0]['source']
                 targetmnt = out['filesystems'][0]['target']
