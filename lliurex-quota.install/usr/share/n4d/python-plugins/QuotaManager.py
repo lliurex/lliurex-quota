@@ -21,6 +21,16 @@ import inspect
 
 DEBUG = False
 
+def DBG(thing):
+    if DEBUG != True:
+        return
+    import inspect
+    stack = inspect.stack()[1]
+    funcname = stack[3]
+    callpoint = "{}:{}".format(stack[1],stack[2])
+    line = str.strip(stack[4][0])
+    print("DEBUG@{}({}[{}]) --> {}".format(funcname,callpoint,line,thing))
+
 class QuotaManager:
     def __init__(self):
         # functions that never try to run natively without n4d, fake client not allowed
@@ -95,7 +105,7 @@ class QuotaManager:
                     try:
                         ret = func(self,*args,**kwargs)
                     except Exception as e:
-                        print('Error calling {}, exception: {}'.format(func.__name__,e))
+                        print('Error calling {} with cut expansion, exception: {}'.format(func.__name__,e))
                     if DEBUG:
                         print('Result from {}:\n{}\n'.format(func.__name__,ret))
                 else:
@@ -220,8 +230,8 @@ class QuotaManager:
             return None
 
     def detect_running_system(self):
-        if self.type_client:
-            return self.type_client
+        #if self.type_client:
+        #    return self.type_client
         ips = self.get_local_ips()
         try:
             srv_ip = socket.gethostbyname('server')
