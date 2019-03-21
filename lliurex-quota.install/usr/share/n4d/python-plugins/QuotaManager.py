@@ -1271,13 +1271,14 @@ class QuotaManager:
         return True
 
     def set_quota_user(self, user='all', quota='0M', margin='0M', mount='all', filterbygroup=['teachers', 'students'], persistent=True):
-        userlist = self.get_system_users()
+        filterbygroup=[]
+        #userlist = self.get_system_users()
         groups = self.get_system_groups()
         #print 'set_quota user user = {} quota = {}'.format(user,quota)
         targetuser = []
         if user != 'all':
-            if user not in userlist:
-                raise ValueError('Invalid user, {}'.format(user))
+            #if user not in userlist:
+            #    raise ValueError('Invalid user, {}'.format(user))
             if filterbygroup:
                 for grp_filtered in filterbygroup:
                     if user in groups['bygroup'][grp_filtered]:
@@ -1288,8 +1289,8 @@ class QuotaManager:
             if filterbygroup:
                 for grp_filtered in filterbygroup:
                     for user_in_group in groups['bygroup'][grp_filtered]:
-                        if user in userlist:
-                            targetuser.append(user)
+                        #if user in userlist:
+                        targetuser.append(user)
             else:
                 targetuser = userlist
         if not targetuser:
@@ -1314,6 +1315,8 @@ class QuotaManager:
         if persistent:
             qfile = self.get_quotas_file()
         for useritem in targetuser:
+            if useritem[0] == "#":
+                useritem = useritem[1:]
             cmd = ['setquota','-u',useritem,str(quota),str(quota+margin),'0','0']
             if devicelist:
                 for dev in devicelist:
