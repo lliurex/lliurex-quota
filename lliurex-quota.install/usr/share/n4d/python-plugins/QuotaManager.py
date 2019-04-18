@@ -8,6 +8,7 @@ import socket
 import time
 import pwd
 import grp
+import ldap
 
 from functools import wraps
 import inspect
@@ -1730,6 +1731,34 @@ class QuotaManager:
     def start_quotas(self):
         self.activate('quotaon')
         return self.check_quotaon()
+
+    def get_groups(self):
+        base="ou=Managed,ou=Groups,dc=ma5,dc=lliurex,dc=net"
+        type_system = 'x'
+        try:
+            type_system = self.detect_running_system()
+        except:
+            pass
+        if type_system not in ['client','other']:
+            url="ldaps://localhost"
+        else:
+            url="ldaps://server"
+        try:
+            client=ldap.initialize(url)
+        except Exception as e:
+            SystemError('Error connecting ldap server, {}'.format(e))
+        try:
+            result = client.search_s(base,ldap.SCOPE_SUBTREE)
+            # pasted code from LdapManager get_available_groups plugin
+            group_list = []
+            for group in result:
+                g_path,dic=group
+                dic["path"]=g_path
+                if "posixGroup" in dic["objectClass"]:
+                     group_list.append(dic)
+            return group_list
+        except Exception as e:
+            return [e]
 
     @proxy
     def deconfigure_net_serversync(self):
