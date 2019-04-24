@@ -202,7 +202,7 @@ class QuotaManager:
     def detect_nfs_mount(self,mount='/net/server-sync'):
         try:
             self.try_to_automount()
-            nfsmounts = subprocess.check_output(['findmnt','-J','-t','nfs'])
+            nfsmounts = subprocess.check_output(['findmnt','-J','-t','nfs'],env=self.make_env())
             if nfsmounts == '':
                 return False
             nfsmounts_obj = json.loads(nfsmounts)
@@ -384,7 +384,7 @@ class QuotaManager:
 
     def get_local_ips(self):
         try:
-            ips = subprocess.check_output(['ip','-o','a','s'])
+            ips = subprocess.check_output(['ip','-o','a','s'],env=self.make_env())
         except subprocess.CalledProcessError as e:
             if hasattr(e,'output'):
                 ips = e.output.strip()
@@ -434,7 +434,7 @@ class QuotaManager:
             raise e
         out = None
         try:
-            out = json.loads(subprocess.check_output(['findmnt','-J','-T',str(ipath)]))
+            out = json.loads(subprocess.check_output(['findmnt','-J','-T',str(ipath)],env=self.make_env()))
             fstype = out['filesystems'][0]['fstype']
             if fstype == "autofs":
                 targetfs = self.read_autofs_file(out['filesystems'][0]['source'])
@@ -470,7 +470,7 @@ class QuotaManager:
     def get_idx_mapping_blkid(self):
         out = []
         try:
-            ids = subprocess.check_output(['blkid','-o','list'])
+            ids = subprocess.check_output(['blkid','-o','list'],env=self.make_env())
         except subprocess.CalledProcessError as e:
             if hasattr(e,'output'):
                 ids = e.output.strip()
@@ -492,7 +492,7 @@ class QuotaManager:
         out = []
         try:
             # each version of lsblk outputs distinct information, this is the safest method
-            ids = subprocess.check_output(['lsblk','-P','-o','KNAME,FSTYPE,MOUNTPOINT,UUID'])
+            ids = subprocess.check_output(['lsblk','-P','-o','KNAME,FSTYPE,MOUNTPOINT,UUID'],env=self.make_env())
         except subprocess.CalledProcessError as e:
             if hasattr(e,'output'):
                 ids = e.output.strip()
@@ -519,7 +519,7 @@ class QuotaManager:
         out = []
         try:
             # each version of lsblk outputs distinct information, this is the safest method
-            realname = subprocess.check_output(['readlink','-f',str(devicelink)])
+            realname = subprocess.check_output(['readlink','-f',str(devicelink)],env=self.make_env())
         except subprocess.CalledProcessError as e:
             if hasattr(e,'output'):
                 realname = e.output.strip()
@@ -728,7 +728,7 @@ class QuotaManager:
         if mount == 'all':
             try:
                 cmd.extend(cmd_append)
-                out = subprocess.check_output(cmd)
+                out = subprocess.check_output(cmd,env=self.make_env())
             except subprocess.CalledProcessError as e:
                 if hasattr(e,'output'):
                     out = e.output
@@ -742,7 +742,7 @@ class QuotaManager:
                 if forceumount:
                     cmdtmp = ['umount','-l',target['mountpoint']]
                     try:
-                        out = subprocess.check_output(cmdtmp)
+                        out = subprocess.check_output(cmdtmp,env=self.make_env())
                     except subprocess.CalledProcessError as e:
                         if hasattr(e,'output'):
                             out = e.output
@@ -754,7 +754,7 @@ class QuotaManager:
 
                     cmdtmp = ['mount','-o',target['options'],target['mountpoint']]
                     try:
-                        out = subprocess.check_output(cmdtmp)
+                        out = subprocess.check_output(cmdtmp,env=self.make_env())
                     except subprocess.CalledProcessError as e:
                         if hasattr(e,'output'):
                             out = e.output
@@ -766,7 +766,7 @@ class QuotaManager:
                 else:
                     cmdtmp = cmd + ['-o',target['options'],target['mountpoint']]
                     try:
-                        out = subprocess.check_output(cmdtmp)
+                        out = subprocess.check_output(cmdtmp,env=self.make_env())
                     except subprocess.CalledProcessError as e:
                         if hasattr(e,'output'):
                             out = e.output
@@ -835,7 +835,7 @@ class QuotaManager:
             print('Fail deactivating quotas {}'.format(e))
         for target in targets:
             try:
-                out=subprocess.check_output(['quotacheck','-vguma'],stderr=subprocess.STDOUT)
+                out=subprocess.check_output(['quotacheck','-vguma'],stderr=subprocess.STDOUT,env=self.make_env())
             except subprocess.CalledProcessError as e:
                 if hasattr(e,'output'):
                     raise SystemError('Error trying to check initial quotas on {}, {}, {}'.format(target['fs'],e,e.output.strip()))
@@ -854,7 +854,7 @@ class QuotaManager:
         if self.system_users:
             return self.system_users
         try:
-            pwdlist = subprocess.check_output(['getent','passwd'])
+            pwdlist = subprocess.check_output(['getent','passwd'],env=self.make_env())
         except subprocess.CalledProcessError as e:
             if hasattr(e,'output'):
                 pwdlist = e.output.strip()
@@ -1131,7 +1131,7 @@ class QuotaManager:
         else:
             uparam = '-user {}'.format(user)
         try:
-            sizes = subprocess.check_output(['find {} {} -printf "%u %s\n"'.format(folder,uparam) + "| awk '{user[$1]+=$2}; END{ for( i in user) print i \" \" user[i]}'"],shell=True)
+            sizes = subprocess.check_output(['find {} {} -printf "%u %s\n"'.format(folder,uparam) + "| awk '{user[$1]+=$2}; END{ for( i in user) print i \" \" user[i]}'"],shell=True,env=self.make_env())
         except subprocess.CalledProcessError as e:
             if hasattr(e,'output'):
                 pwdlist = e.output.strip()
@@ -1154,7 +1154,7 @@ class QuotaManager:
         if self.system_groups:
             return self.system_groups
         try:
-            grplist = subprocess.check_output(['getent','group'])
+            grplist = subprocess.check_output(['getent','group'],env=self.make_env())
         except subprocess.CalledProcessError as e:
             if hasattr(e,'output'):
                 grplist = e.output.strip()
@@ -1194,7 +1194,7 @@ class QuotaManager:
         else:
             uparam = ''
         try:
-            out = subprocess.check_output(['quota','-v',uparam,'-w','-p','-F',format,'-u',user])
+            out = subprocess.check_output(['quota','-v',uparam,'-w','-p','-F',format,'-u',user],env=self.make_env())
         except subprocess.CalledProcessError as e:
             if hasattr(e,'output'):
                 out = e.output.strip()
@@ -1323,7 +1323,7 @@ class QuotaManager:
                 for dev in devicelist:
                     cmd.extend([dev])
                     try:
-                        out = subprocess.check_output(cmd)
+                        out = subprocess.check_output(cmd,env=self.make_env())
                     except subprocess.CalledProcessError as e:
                         if hasattr(e,'output'):
                             out = e.output.strip()
@@ -1334,7 +1334,7 @@ class QuotaManager:
             else:
                 cmd.extend(append_command)
                 try:
-                    out = subprocess.check_output(cmd)
+                    out = subprocess.check_output(cmd,env=self.make_env())
                 except subprocess.CalledProcessError as e:
                     if hasattr(e,'output'):
                         out = e.output.strip()
@@ -1459,10 +1459,21 @@ class QuotaManager:
             fp.write(str(st))
         return st
 
+    def make_env(self,oenv=os.environ.copy()):
+        env={}
+        env=oenv.copy()
+        substitution = { 'LANG': 'C', 'LANGUAGE':'en', 'LC_.*':'en_US.UTF-8'}
+        for var in substitution:
+            reg = re.compile('^'+var+'$')
+            for ovar in oenv:
+                m=reg.match(ovar)
+                if m:
+                    env[m.string]=substitution[var]
+        return env
 
     def check_quotaon(self):
         try:
-            out = subprocess.check_output(['quotaon','-pa'])
+            out = subprocess.check_output(['quotaon','-pa'],env=self.make_env())
             out = out.strip()
         except subprocess.CalledProcessError as e:
             if hasattr(e,'output'):
@@ -1481,7 +1492,7 @@ class QuotaManager:
 
     def check_rquota_active(self):
         try:
-            rpcinfo = subprocess.check_output(['rpcinfo','-p'])
+            rpcinfo = subprocess.check_output(['rpcinfo','-p'],env=self.make_env())
         except Exception as e:
             raise SystemError('Error checking rpcinfo, {}'.format(e))
         return True if 'rquotad' in rpcinfo else False
@@ -1561,7 +1572,7 @@ class QuotaManager:
         else:
             uparam = '-asup'
         try:
-            quotalist = subprocess.check_output(['repquota',uparam,'-Ocsv'])
+            quotalist = subprocess.check_output(['repquota',uparam,'-Ocsv'],env=self.make_env())
         except subprocess.CalledProcessError as e:
             if hasattr(e,'output'):
                 quotalist = e.output.strip()
