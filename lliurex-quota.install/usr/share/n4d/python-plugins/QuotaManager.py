@@ -22,6 +22,10 @@ import inspect
 #
 
 DEBUG = False
+ALLOW_DELETED_USERS = False
+AUTORESET_DELETED_USERS = True
+THREADED = True
+CRON_TIMEOUT = 30
 
 def DBG(thing):
     if DEBUG != True:
@@ -46,9 +50,9 @@ class QuotaManager:
         self.system_users = None
         self.get_client()
         # threaded cron
-        self.threaded=True
+        self.threaded=THREADED
         self.thread_worker=None
-        self.resolution_timer_thread=1*30
+        self.resolution_timer_thread=CRON_TIMEOUT
         self.last_worker_execution=0
         self.exit_thread=False
         self.make_thread_cron()
@@ -978,7 +982,7 @@ class QuotaManager:
             print('init normalize')
 
         # FIRST PASS(A): GET QUOTAS APPLIED ON SYSTEM
-        quotas = self.get_quotas(humanunits=False)
+        quotas = self.get_quotas(humanunits=False,quotamanager=True)
         if DEBUG:
             print('quotas from fs (raw) (absolute values) {}'.format(print_dict_ordered(quotas)))
         qdict = {}
@@ -1191,16 +1195,20 @@ class QuotaManager:
         self.system_groups = grpdict
         return grpdict
 
-    def get_quotas2(self, format='vfsv0', humanunits=True):
+    def get_quotas2(self, format='vfsv0', humanunits=True, quotamanager=False):
         users = self.get_system_users()
         quotadict = {}
         for user in users:
-            quotadict.setdefault(user,self.get_quota_user2(user=user,extended_info=True,format=format,humanunits=humanunits))
+            if not quotamanager and not ALLOW_DELETED_USERS and user[0] == '#':
+                continue
+            quotadict.setdefault(user,self.get_quota_user2(user=user,extended_info=True,format=format,humanunits=humanunits,quotamanager=quotamanager))
         return quotadict
 
-    def get_quota_user2(self, user='all', extended_info=False, format='vfsv0', humanunits=True):
+    def get_quota_user2(self, user='all', extended_info=False, format='vfsv0', humanunits=True,quotamanager=False):
+        if not quotamanager and not ALLOW_DELETED_USERS and user[0] == '#':
+            return None
         if user == 'all':
-            return self.get_quotas2()
+            return self.get_quotas2(quotamanager=quotamanager)
         users = self.get_system_users()
         if user not in users:
             raise ValueError('No such user')
@@ -1253,8 +1261,10 @@ class QuotaManager:
 
         return quotainfo
 
-    def get_quota_user(self, user='all', extended_info=False):
-        quotas = self.get_quotas()
+    def get_quota_user(self, user='all', extended_info=False, quotamanager=False):
+        if not quotamanager and not ALLOW_DELETED_USERS and user[0] == '#':
+            return None
+        quotas = self.get_quotas(quotamanager=quotamanager)
         if user != 'all':
             if not extended_info:
                 out = quotas[user]['spacehardlimit'] if user in quotas else None
@@ -1288,7 +1298,7 @@ class QuotaManager:
 
     def set_quota_user(self, user='all', quota='0M', margin='0M', mount='all', filterbygroup=['teachers', 'students'], persistent=True):
         filterbygroup=[]
-        #userlist = self.get_system_users()
+        userlist = self.get_system_users()
         groups = self.get_system_groups()
         #print 'set_quota user user = {} quota = {}'.format(user,quota)
         targetuser = []
@@ -1574,7 +1584,7 @@ class QuotaManager:
         return True
 
     def sync_quotas(self,*args,**kwargs):
-        current_detected = self.get_quotas(humanunits=False)
+        current_detected = self.get_quotas(humanunits=False,quotamanager=True)
 
     @proxy
     def get_quotas(self,*args,**kwargs):
@@ -1586,6 +1596,10 @@ class QuotaManager:
                 uparam = '-aup'
         else:
             uparam = '-asup'
+        if 'quotamanager' in kwargs and kwargs['quotamanager'] == True:
+            all_entries=True
+        else:
+            all_entries=False
         try:
             quotalist = subprocess.check_output(['repquota',uparam,'-Ocsv'],env=self.make_env())
         except subprocess.CalledProcessError as e:
@@ -1603,6 +1617,17 @@ class QuotaManager:
                 skip=0
                 continue
             fields = line.split(',')
+            if AUTORESET_DELETED_USERS and str(fields[0]) and str(fields[0])[0] == '#':
+                if str(fields[5]) != '0':
+                    print('RESETTING {}'.format(fields[0]))
+                    self.reset_user(fields[0][1:])
+                else:
+                    print('ALREADY RESETED {}'.format(fields[0]))
+                continue
+            if not all_entries and not ALLOW_DELETED_USERS:
+                if str(fields[0]) and str(fields[0])[0] == '#':
+                    continue
+
             quotadict[fields[0]] = {}
             quotadict[fields[0]]['spacestatus'] = fields[1]
             quotadict[fields[0]]['filestatus'] = fields[2]
@@ -1620,7 +1645,7 @@ class QuotaManager:
     def get_userquota(self,*args,**kwargs):
         retlist = []
         for user in args:
-            retlist.append(self.get_quota_user2(user=user))
+            retlist.append(self.get_quota_user2(user=user,quotamanager=False))
         return retlist
 
     @proxy
@@ -1634,6 +1659,13 @@ class QuotaManager:
             return self.set_quota_user(user=user,quota=quota,margin=margin,**kwargs)
         except Exception as e:
             return str(e)
+
+    def reset_user(self,user):
+        self.set_userquota(user,0)
+
+    @proxy
+    def reset_all_users(self):
+        self.set_quota_user(user='all',quota=0,margin=0,filterbygroup=[])
 
     @proxy
     def set_groupquota(self,group,quota,*args,**kwargs):
