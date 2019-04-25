@@ -9,6 +9,7 @@ import time
 import pwd
 import grp
 import ldap
+import threading
 
 from functools import wraps
 import inspect
@@ -21,6 +22,10 @@ import inspect
 #
 
 DEBUG = False
+ALLOW_DELETED_USERS = False
+AUTORESET_DELETED_USERS = True
+THREADED = True
+CRON_TIMEOUT = 30
 
 def DBG(thing):
     if DEBUG != True:
@@ -44,6 +49,20 @@ class QuotaManager:
         self.system_groups = None
         self.system_users = None
         self.get_client()
+        # threaded cron
+        self.threaded=THREADED
+        self.thread_worker=None
+        self.resolution_timer_thread=CRON_TIMEOUT
+        self.last_worker_execution=0
+        self.exit_thread=False
+        self.make_thread_cron()
+
+    def make_thread_cron(self):
+        if not self.threaded:
+            return
+        self.thread_worker = threading.Thread(target=self.threaded_cron,name='Daemon cron QuotaManager')
+        self.thread_worker.setDaemon(True)
+        self.thread_worker.start()
 
     def set_credentials(self,user,pwd):
         self.auth=(user,pwd)
@@ -850,8 +869,8 @@ class QuotaManager:
             print('Fail activating quotas {}'.format(e))
         return True
 
-    def get_system_users(self):
-        if self.system_users:
+    def get_system_users(self,use_cache=False):
+        if use_cache and self.system_users:
             return self.system_users
         try:
             pwdlist = subprocess.check_output(['getent','passwd'],env=self.make_env())
@@ -963,7 +982,7 @@ class QuotaManager:
             print('init normalize')
 
         # FIRST PASS(A): GET QUOTAS APPLIED ON SYSTEM
-        quotas = self.get_quotas(humanunits=False)
+        quotas = self.get_quotas(humanunits=False,quotamanager=True)
         if DEBUG:
             print('quotas from fs (raw) (absolute values) {}'.format(print_dict_ordered(quotas)))
         qdict = {}
@@ -1150,8 +1169,8 @@ class QuotaManager:
             sizedict.setdefault(username,int(size)/1000)
         return sizedict
 
-    def get_system_groups(self):
-        if self.system_groups:
+    def get_system_groups(self,use_cache=False):
+        if use_cache and self.system_groups:
             return self.system_groups
         try:
             grplist = subprocess.check_output(['getent','group'],env=self.make_env())
@@ -1176,16 +1195,20 @@ class QuotaManager:
         self.system_groups = grpdict
         return grpdict
 
-    def get_quotas2(self, format='vfsv0', humanunits=True):
+    def get_quotas2(self, format='vfsv0', humanunits=True, quotamanager=False):
         users = self.get_system_users()
         quotadict = {}
         for user in users:
-            quotadict.setdefault(user,self.get_quota_user2(user=user,extended_info=True,format=format,humanunits=humanunits))
+            if not quotamanager and not ALLOW_DELETED_USERS and user[0] == '#':
+                continue
+            quotadict.setdefault(user,self.get_quota_user2(user=user,extended_info=True,format=format,humanunits=humanunits,quotamanager=quotamanager))
         return quotadict
 
-    def get_quota_user2(self, user='all', extended_info=False, format='vfsv0', humanunits=True):
+    def get_quota_user2(self, user='all', extended_info=False, format='vfsv0', humanunits=True,quotamanager=False):
+        if not quotamanager and not ALLOW_DELETED_USERS and user[0] == '#':
+            return None
         if user == 'all':
-            return self.get_quotas2()
+            return self.get_quotas2(quotamanager=quotamanager)
         users = self.get_system_users()
         if user not in users:
             raise ValueError('No such user')
@@ -1238,8 +1261,10 @@ class QuotaManager:
 
         return quotainfo
 
-    def get_quota_user(self, user='all', extended_info=False):
-        quotas = self.get_quotas()
+    def get_quota_user(self, user='all', extended_info=False, quotamanager=False):
+        if not quotamanager and not ALLOW_DELETED_USERS and user[0] == '#':
+            return None
+        quotas = self.get_quotas(quotamanager=quotamanager)
         if user != 'all':
             if not extended_info:
                 out = quotas[user]['spacehardlimit'] if user in quotas else None
@@ -1273,7 +1298,7 @@ class QuotaManager:
 
     def set_quota_user(self, user='all', quota='0M', margin='0M', mount='all', filterbygroup=['teachers', 'students'], persistent=True):
         filterbygroup=[]
-        #userlist = self.get_system_users()
+        userlist = self.get_system_users()
         groups = self.get_system_groups()
         #print 'set_quota user user = {} quota = {}'.format(user,quota)
         targetuser = []
@@ -1559,7 +1584,7 @@ class QuotaManager:
         return True
 
     def sync_quotas(self,*args,**kwargs):
-        current_detected = self.get_quotas(humanunits=False)
+        current_detected = self.get_quotas(humanunits=False,quotamanager=True)
 
     @proxy
     def get_quotas(self,*args,**kwargs):
@@ -1571,6 +1596,10 @@ class QuotaManager:
                 uparam = '-aup'
         else:
             uparam = '-asup'
+        if 'quotamanager' in kwargs and kwargs['quotamanager'] == True:
+            all_entries=True
+        else:
+            all_entries=False
         try:
             quotalist = subprocess.check_output(['repquota',uparam,'-Ocsv'],env=self.make_env())
         except subprocess.CalledProcessError as e:
@@ -1588,6 +1617,17 @@ class QuotaManager:
                 skip=0
                 continue
             fields = line.split(',')
+            if AUTORESET_DELETED_USERS and str(fields[0]) and str(fields[0])[0] == '#':
+                if str(fields[5]) != '0':
+                    print('RESETTING {}'.format(fields[0]))
+                    self.reset_user(fields[0][1:])
+                else:
+                    print('ALREADY RESETED {}'.format(fields[0]))
+                continue
+            if not all_entries and not ALLOW_DELETED_USERS:
+                if str(fields[0]) and str(fields[0])[0] == '#':
+                    continue
+
             quotadict[fields[0]] = {}
             quotadict[fields[0]]['spacestatus'] = fields[1]
             quotadict[fields[0]]['filestatus'] = fields[2]
@@ -1605,7 +1645,7 @@ class QuotaManager:
     def get_userquota(self,*args,**kwargs):
         retlist = []
         for user in args:
-            retlist.append(self.get_quota_user2(user=user))
+            retlist.append(self.get_quota_user2(user=user,quotamanager=False))
         return retlist
 
     @proxy
@@ -1619,6 +1659,13 @@ class QuotaManager:
             return self.set_quota_user(user=user,quota=quota,margin=margin,**kwargs)
         except Exception as e:
             return str(e)
+
+    def reset_user(self,user):
+        self.set_userquota(user,0)
+
+    @proxy
+    def reset_all_users(self):
+        self.set_quota_user(user='all',quota=0,margin=0,filterbygroup=[])
 
     @proxy
     def set_groupquota(self,group,quota,*args,**kwargs):
@@ -1799,6 +1846,22 @@ class QuotaManager:
             return False
 
     def n4d_cron(self, minutes):
+        if self.threaded:
+            return
+        self.worker_code()
+
+    def threaded_cron(self):
+        if not self.threaded:
+            return
+        while (not self.exit_thread):
+            ctime = int(time.time())
+            if ctime > self.last_worker_execution + self.resolution_timer_thread: # do jobs
+                self.last_worker_execution=ctime
+                self.worker_code()
+                #print('Done threaded cron at: {}'.format(ctime))
+            time.sleep(0.5)
+
+    def worker_code(self):
         if DEBUG:
             print('n4d_cron called')
         type = self.detect_running_system()
@@ -1807,107 +1870,3 @@ class QuotaManager:
         if type and (type == 'master' or type == 'independent'):
             self.periodic_actions()
         return True
-
-def test_quotas():
-    test = QuotaManager()
-    print 'CHECK QUOTAS FILTERED USER ALUS01 (1)'
-    q = test.get_quotas()
-    if 'alus01' in q:
-        for k in sorted(q['alus01']):
-            print k,q['alus01'][k]
-    print 'CHECK QUOTAS FILTERED USER ALUS01 (2)'
-    q = test.get_quotas2()
-    if 'alus01' in q:
-        for k in sorted(q['alus01']):
-            print k,q['alus01'][k]
-    print 'CHECK QUOTA USER ALUS01 (1)'
-    print test.get_quota_user('alus01')
-    print 'CHECK QUOTA USER ALUS01 (2)'
-    print test.get_quota_user2('alus01')
-    print 'CHECK QUOTA USER ALUS01 EXTENDED (1)'
-    print test.get_quota_user('alus01',True)
-    print 'CHECK QUOTA USER ALUS01 EXTENDED (2)'
-    print test.get_quota_user2('alus01',True)
-
-def test_set_fs():
-    test = QuotaManager()
-    print 'DETECTING SYSTEM'
-    d = test.detect_running_system()
-    print d
-    print 'GET MOUNTS'
-    print test.get_fstab_mounts()
-    print 'GET MOUNTS WITH QUOTAS'
-    out=test.get_mounts_with_quota()
-    print out
-    mount = '/net/server-sync'
-    fs= '/'
-    print 'DETECT MOUNT SERVERSYNC {}'.format(mount)
-    fs,mount = test.detect_mount_from_path(mount)
-    print "DETECTED {} {}".format(fs,mount)
-    done=False
-    if out:
-        for x in out:
-            if x['mountpoint'] == mount:
-                fs = x['fs']
-                done = True
-    if not done:
-        print 'SET SERVER-SYNC {}'.format(fs)
-        print test.set_mount_with_quota(fs)
-    print 'REMOUNT ALL (DUMMY)'
-    print test.remount('all')
-    print 'REMOUNT SERVER-SYNC {}'.format(mount)
-    print test.remount(mount)
-    print 'REMOUNT SD {}'.format(fs)
-    print test.remount(fs)
-    print 'CHECK QUOTAON'
-    print test.check_quotaon()
-    print 'CHECK SERVER-SYNC ON {}'.format(mount)
-    print test.check_quotas_status(status={'user':'on','group':'on','project':'off'},device=mount,quotatype=['user','group'])
-    print 'UNSET SERVER-SYNC {}'.format(mount)
-    print test.unset_mount_with_quota(mount)
-    print 'CHECK QUOTAON (None)'
-    print test.check_quotaon()
-    print 'CHECK SD OFF {}'.format(fs)
-    print test.check_quotas_status(status={'user':'off','group':'off','project':'off'},device=fs,quotatype=['user','group'])
-    print 'SET SERVER-SYNC {}'.format(mount)
-    print test.set_mount_with_quota(mount)
-    print 'CHECK QUOTAON'
-    print test.check_quotaon()
-    print 'N4D CALL'
-    print test.n4d_cron(0)
-    print 'CHECK SD ON {}'.format(fs)
-    print test.check_quotas_status(status={'user':'on','group':'on','project':'off'},device=fs,quotatype=['user','group'])
-    print 'CHECK SERVER-SYNC/ ON {}'.format(mount)
-    print test.check_quotas_status(status={'user':'on','group':'on','project':'off'},device=mount,quotatype=['user','group'])
-    print 'CHECK QUOTA USER ALUS01'
-    print test.get_quota_user('alus01')
-    print 'SET QUOTA USER ALUS01 = 100'
-    print test.set_quota_user('alus01','100M')
-    print 'CHECK QUOTA USER ALUS01 (100M)'
-    print test.get_quota_user('alus01')
-    print 'CHECK QUOTA USER ALUS01 (100M) EXTENDED'
-    print test.get_quota_user('alus01',True)
-    print 'UNSET QUOTA USER ALUS01 = 0'
-    print test.set_quota_user('alus01','0')
-    print 'CHECK QUOTA USER ALUS01 (0)'
-    print test.get_quota_user('alus01')
-    print 'GET ALL QUOTAS'
-    print test.get_quota_user()
-    print 'GET ALL QUOTAS EXTENDED'
-    print test.get_quota_user(extended_info=True)
-    print 'CHECK QUOTA USER ALUS001 (None)'
-    print test.get_quota_user('alus0001')
-    print 'UNSET SD {}'.format(fs)
-    print test.unset_mount_with_quota(fs)
-    print 'CHECK QUOTAON (None)'
-    print test.check_quotaon()
-    print 'SET SD {}'.format(fs)
-    print test.set_mount_with_quota(fs)
-    print 'CHECK QUOTAON'
-    print test.check_quotaon()
-
-if __name__ == '__main__' and len(sys.argv) != 1 and sys.argv[1] == 'getquotas':
-    test_quotas()
-
-if __name__ == '__main__' and len(sys.argv) == 1:
-    test_set_fs()
