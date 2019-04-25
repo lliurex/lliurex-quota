@@ -196,8 +196,17 @@ class QuotaManager:
         except Exception as e:
             return []
 
+    def drop_ns_caches(self):
+        dbs=['group','passwd']
+        try:
+            for db in dbs:
+                subprocess.check_call(['/usr/sbin/nscd','--invalidate='+db],env=self.make_env())
+        except:
+            pass
+
     def get_users_group(self,group):
         try:
+            self.drop_ns_caches()
             return sorted(grp.getgrnam(group).gr_mem)
         except KeyError as e:
             return []
@@ -872,6 +881,8 @@ class QuotaManager:
     def get_system_users(self,use_cache=False):
         if use_cache and self.system_users:
             return self.system_users
+        if not use_cache:
+            self.drop_ns_caches()
         try:
             pwdlist = subprocess.check_output(['getent','passwd'],env=self.make_env())
         except subprocess.CalledProcessError as e:
@@ -954,7 +965,7 @@ class QuotaManager:
         return dirpath
 
     def normalize_quotas(self):
-        def print_dict_ordered(d,level=0,filter='^(file|space|quota|margin|norm|hard|soft)',userfilter='alus01',usefilter=True):
+        def print_dict_ordered(d,level=0,filter='^(file|space|quota|margin|norm|hard|soft)',userfilter='alus01',usefilter=False):
             try:
                 filtered = False
                 ret = ''
@@ -1017,6 +1028,9 @@ class QuotaManager:
                     users_into_groups[user].append(x);
                 else:
                     users_into_groups.setdefault(user,[x]);
+        if DEBUG:
+            print('System groups: {}'.format(sysgroups))
+            print('Users into groups: {}'.format(users_into_groups))
 
         # THIRD PASS(A): GET ALL QUOTAS CONFIGURED FROM APPLICATION OR BUILD NEW FILE WITH DEFAULT QUOTAS
         try:
@@ -1172,6 +1186,8 @@ class QuotaManager:
     def get_system_groups(self,use_cache=False):
         if use_cache and self.system_groups:
             return self.system_groups
+        if not use_cache:
+            self.drop_ns_caches()
         try:
             grplist = subprocess.check_output(['getent','group'],env=self.make_env())
         except subprocess.CalledProcessError as e:
@@ -1567,7 +1583,7 @@ class QuotaManager:
             if not os.path.isfile(name):
                 raise ValueError('{} not found'.format(name))
             try:
-                subprocess.call([name], shell=True, stderr=open(os.devnull,'w'), stdout=open(os.devnull,'w'))
+                subprocess.call([name], shell=True, stderr=open(os.devnull,'w'), stdout=open(os.devnull,'w'), env=self.make_env())
                 if DEBUG:
                     print('Successfully executed {}'.format(name))
             except Exception as e:
@@ -1623,7 +1639,7 @@ class QuotaManager:
                 if str(fields[5]) != '0':
                     #print('RESETTING {}'.format(fields[0]))
                     self.reset_user(fields[0][1:])
-                else:
+                #else:
                     #print('ALREADY RESETED {}'.format(fields[0]))
                 continue
             if not all_entries and not ALLOW_DELETED_USERS:
