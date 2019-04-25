@@ -9,6 +9,7 @@ import time
 import pwd
 import grp
 import ldap
+import threading
 
 from functools import wraps
 import inspect
@@ -44,6 +45,20 @@ class QuotaManager:
         self.system_groups = None
         self.system_users = None
         self.get_client()
+        # threaded cron
+        self.threaded=True
+        self.thread_worker=None
+        self.resolution_timer_thread=1*30
+        self.last_worker_execution=0
+        self.exit_thread=False
+        self.make_thread_cron()
+
+    def make_thread_cron(self):
+        if not self.threaded:
+            return
+        self.thread_worker = threading.Thread(target=self.threaded_cron,name='Daemon cron QuotaManager')
+        self.thread_worker.setDaemon(True)
+        self.thread_worker.start()
 
     def set_credentials(self,user,pwd):
         self.auth=(user,pwd)
@@ -1799,6 +1814,22 @@ class QuotaManager:
             return False
 
     def n4d_cron(self, minutes):
+        if self.threaded:
+            return
+        self.worker_code()
+
+    def threaded_cron(self):
+        if not self.threaded:
+            return
+        while (not self.exit_thread):
+            ctime = int(time.time())
+            if ctime > self.last_worker_execution + self.resolution_timer_thread: # do jobs
+                self.last_worker_execution=ctime
+                self.worker_code()
+                #print('Done threaded cron at: {}'.format(ctime))
+            time.sleep(0.5)
+
+    def worker_code(self):
         if DEBUG:
             print('n4d_cron called')
         type = self.detect_running_system()
@@ -1807,107 +1838,3 @@ class QuotaManager:
         if type and (type == 'master' or type == 'independent'):
             self.periodic_actions()
         return True
-
-def test_quotas():
-    test = QuotaManager()
-    print 'CHECK QUOTAS FILTERED USER ALUS01 (1)'
-    q = test.get_quotas()
-    if 'alus01' in q:
-        for k in sorted(q['alus01']):
-            print k,q['alus01'][k]
-    print 'CHECK QUOTAS FILTERED USER ALUS01 (2)'
-    q = test.get_quotas2()
-    if 'alus01' in q:
-        for k in sorted(q['alus01']):
-            print k,q['alus01'][k]
-    print 'CHECK QUOTA USER ALUS01 (1)'
-    print test.get_quota_user('alus01')
-    print 'CHECK QUOTA USER ALUS01 (2)'
-    print test.get_quota_user2('alus01')
-    print 'CHECK QUOTA USER ALUS01 EXTENDED (1)'
-    print test.get_quota_user('alus01',True)
-    print 'CHECK QUOTA USER ALUS01 EXTENDED (2)'
-    print test.get_quota_user2('alus01',True)
-
-def test_set_fs():
-    test = QuotaManager()
-    print 'DETECTING SYSTEM'
-    d = test.detect_running_system()
-    print d
-    print 'GET MOUNTS'
-    print test.get_fstab_mounts()
-    print 'GET MOUNTS WITH QUOTAS'
-    out=test.get_mounts_with_quota()
-    print out
-    mount = '/net/server-sync'
-    fs= '/'
-    print 'DETECT MOUNT SERVERSYNC {}'.format(mount)
-    fs,mount = test.detect_mount_from_path(mount)
-    print "DETECTED {} {}".format(fs,mount)
-    done=False
-    if out:
-        for x in out:
-            if x['mountpoint'] == mount:
-                fs = x['fs']
-                done = True
-    if not done:
-        print 'SET SERVER-SYNC {}'.format(fs)
-        print test.set_mount_with_quota(fs)
-    print 'REMOUNT ALL (DUMMY)'
-    print test.remount('all')
-    print 'REMOUNT SERVER-SYNC {}'.format(mount)
-    print test.remount(mount)
-    print 'REMOUNT SD {}'.format(fs)
-    print test.remount(fs)
-    print 'CHECK QUOTAON'
-    print test.check_quotaon()
-    print 'CHECK SERVER-SYNC ON {}'.format(mount)
-    print test.check_quotas_status(status={'user':'on','group':'on','project':'off'},device=mount,quotatype=['user','group'])
-    print 'UNSET SERVER-SYNC {}'.format(mount)
-    print test.unset_mount_with_quota(mount)
-    print 'CHECK QUOTAON (None)'
-    print test.check_quotaon()
-    print 'CHECK SD OFF {}'.format(fs)
-    print test.check_quotas_status(status={'user':'off','group':'off','project':'off'},device=fs,quotatype=['user','group'])
-    print 'SET SERVER-SYNC {}'.format(mount)
-    print test.set_mount_with_quota(mount)
-    print 'CHECK QUOTAON'
-    print test.check_quotaon()
-    print 'N4D CALL'
-    print test.n4d_cron(0)
-    print 'CHECK SD ON {}'.format(fs)
-    print test.check_quotas_status(status={'user':'on','group':'on','project':'off'},device=fs,quotatype=['user','group'])
-    print 'CHECK SERVER-SYNC/ ON {}'.format(mount)
-    print test.check_quotas_status(status={'user':'on','group':'on','project':'off'},device=mount,quotatype=['user','group'])
-    print 'CHECK QUOTA USER ALUS01'
-    print test.get_quota_user('alus01')
-    print 'SET QUOTA USER ALUS01 = 100'
-    print test.set_quota_user('alus01','100M')
-    print 'CHECK QUOTA USER ALUS01 (100M)'
-    print test.get_quota_user('alus01')
-    print 'CHECK QUOTA USER ALUS01 (100M) EXTENDED'
-    print test.get_quota_user('alus01',True)
-    print 'UNSET QUOTA USER ALUS01 = 0'
-    print test.set_quota_user('alus01','0')
-    print 'CHECK QUOTA USER ALUS01 (0)'
-    print test.get_quota_user('alus01')
-    print 'GET ALL QUOTAS'
-    print test.get_quota_user()
-    print 'GET ALL QUOTAS EXTENDED'
-    print test.get_quota_user(extended_info=True)
-    print 'CHECK QUOTA USER ALUS001 (None)'
-    print test.get_quota_user('alus0001')
-    print 'UNSET SD {}'.format(fs)
-    print test.unset_mount_with_quota(fs)
-    print 'CHECK QUOTAON (None)'
-    print test.check_quotaon()
-    print 'SET SD {}'.format(fs)
-    print test.set_mount_with_quota(fs)
-    print 'CHECK QUOTAON'
-    print test.check_quotaon()
-
-if __name__ == '__main__' and len(sys.argv) != 1 and sys.argv[1] == 'getquotas':
-    test_quotas()
-
-if __name__ == '__main__' and len(sys.argv) == 1:
-    test_set_fs()
