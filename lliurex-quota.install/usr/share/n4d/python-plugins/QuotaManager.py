@@ -1297,6 +1297,8 @@ class QuotaManager:
         return True
 
     def set_quota_user(self, user='all', quota='0M', margin='0M', mount='all', filterbygroup=['teachers', 'students'], persistent=True):
+        if str(user) and str(user)[0] == '#':
+            user = str(user)[1:]
         filterbygroup=[]
         userlist = self.get_system_users()
         groups = self.get_system_groups()
@@ -1619,10 +1621,10 @@ class QuotaManager:
             fields = line.split(',')
             if AUTORESET_DELETED_USERS and str(fields[0]) and str(fields[0])[0] == '#':
                 if str(fields[5]) != '0':
-                    print('RESETTING {}'.format(fields[0]))
+                    #print('RESETTING {}'.format(fields[0]))
                     self.reset_user(fields[0][1:])
                 else:
-                    print('ALREADY RESETED {}'.format(fields[0]))
+                    #print('ALREADY RESETED {}'.format(fields[0]))
                 continue
             if not all_entries and not ALLOW_DELETED_USERS:
                 if str(fields[0]) and str(fields[0])[0] == '#':
