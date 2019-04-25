@@ -850,8 +850,8 @@ class QuotaManager:
             print('Fail activating quotas {}'.format(e))
         return True
 
-    def get_system_users(self):
-        if self.system_users:
+    def get_system_users(self,use_cache=False):
+        if use_cache and self.system_users:
             return self.system_users
         try:
             pwdlist = subprocess.check_output(['getent','passwd'],env=self.make_env())
@@ -1150,8 +1150,8 @@ class QuotaManager:
             sizedict.setdefault(username,int(size)/1000)
         return sizedict
 
-    def get_system_groups(self):
-        if self.system_groups:
+    def get_system_groups(self,use_cache=False):
+        if use_cache and self.system_groups:
             return self.system_groups
         try:
             grplist = subprocess.check_output(['getent','group'],env=self.make_env())
