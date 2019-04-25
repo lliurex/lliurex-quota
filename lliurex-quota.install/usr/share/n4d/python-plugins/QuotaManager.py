@@ -1749,46 +1749,58 @@ class QuotaManager:
 
     @proxy
     def configure_net_serversync(self):
-        #qmounts = self.get_mounts_with_quota()
-        mount = '/net/server-sync'
-        fs= '/'
-        #fs,mount = self.detect_mount_from_path(mount)
-        #done=False
-        #if qmounts:
-        #    for qm in qmounts:
-        #        if qm['mountpoint'] == mount:
-        #            fs = qm['fs']
-        #            done = True
-        #            return True
         try:
-            status = self.detect_status_folder('/net/server-sync')
+            #qmounts = self.get_mounts_with_quota()
+            mount = '/net/server-sync'
+            fs= '/'
+            #fs,mount = self.detect_mount_from_path(mount)
+            #done=False
+            #if qmounts:
+            #    for qm in qmounts:
+            #        if qm['mountpoint'] == mount:
+            #            fs = qm['fs']
+            #            done = True
+            #            return True
+            try:
+                status = self.detect_status_folder('/net/server-sync')
+            except Exception as e:
+                print('Error getting status of folder /net/server-sync, {}'.format(e))
+                status = None
+
+            if not isinstance(status, dict):
+                print('Error unknown type returned from detect_status_folder')
+                return None
+
+            ret = None
+            if not status.get('done'):
+                self.set_status_file(True)
+                ret = self.set_mount_with_quota(status.get('fs'))
+                self.remount(status.get('mount'))
+                self.check_quotaon()
+                self.check_quotas_status(status={'user':'on','group':'on','project':'off'},device=status.get('mount'),quotatype=['user','group'])
+                self.normalize_quotas()
+            return ret
         except Exception as e:
-            print('Error getting status of folder /net/server-sync, {}'.format(e))
-            status = None
-
-        if not isinstance(status, dict):
-            print('Error unknown type returned from detect_status_folder')
-            return None
-
-        ret = None
-        if not status.get('done'):
-            self.set_status_file(True)
-            ret = self.set_mount_with_quota(status.get('fs'))
-            self.remount(status.get('mount'))
-            self.check_quotaon()
-            self.check_quotas_status(status={'user':'on','group':'on','project':'off'},device=status.get('mount'),quotatype=['user','group'])
-            self.normalize_quotas()
-        return ret
+            print('Exception occured, {}'.format(e))
+            return False
 
     @proxy
     def stop_quotas(self):
-        self.activate('quotaoff')
-        return self.check_quotaon()
+        try:
+            self.activate('quotaoff')
+            return self.check_quotaon()
+        except Exception as e:
+            print('Exception occured, {}'.format(e))
+            return False
 
     @proxy
     def start_quotas(self):
-        self.activate('quotaon')
-        return self.check_quotaon()
+        try:
+            self.activate('quotaon')
+            return self.check_quotaon()
+        except Exception as e:
+            print('Exception occured, {}'.format(e))
+            return False
 
     def get_groups(self):
         base="ou=Managed,ou=Groups,dc=ma5,dc=lliurex,dc=net"
@@ -1816,22 +1828,27 @@ class QuotaManager:
                      group_list.append(dic)
             return group_list
         except Exception as e:
+            print('Exception occured, {}'.format(e))
             return [e]
 
     @proxy
     def deconfigure_net_serversync(self):
-        mount = '/net/server-sync'
-        fs= '/'
-        fs,mount = self.detect_mount_from_path(mount)
-        self.activate('quotaoff')
-        ret = self.unset_mount_with_quota(mount)
-        self.set_status_file(False)
-        # activate other quotas
         try:
-            self.activate('quotaon',silent=True)
-        except:
-            pass
-        return ret
+            mount = '/net/server-sync'
+            fs= '/'
+            fs,mount = self.detect_mount_from_path(mount)
+            self.activate('quotaoff')
+            ret = self.unset_mount_with_quota(mount)
+            self.set_status_file(False)
+            # activate other quotas
+            try:
+                self.activate('quotaon',silent=True)
+            except:
+                pass
+            return ret
+        except Exception as e:
+            print('Exception occured, {}'.format(e))
+            return False
 
     def periodic_actions(self):
         if self.get_status():
@@ -1862,11 +1879,15 @@ class QuotaManager:
             time.sleep(0.5)
 
     def worker_code(self):
-        if DEBUG:
-            print('n4d_cron called')
-        type = self.detect_running_system()
-        if DEBUG:
-            print('detected {}'.format(type))
-        if type and (type == 'master' or type == 'independent'):
-            self.periodic_actions()
-        return True
+        try:
+            if DEBUG:
+                print('n4d_cron called')
+            type = self.detect_running_system()
+            if DEBUG:
+                print('detected {}'.format(type))
+            if type and (type == 'master' or type == 'independent'):
+                self.periodic_actions()
+            return True
+        except Exception as e:
+            print('Exception occured, {}'.format(e))
+            return False
