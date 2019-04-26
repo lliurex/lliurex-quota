@@ -26,6 +26,7 @@ ALLOW_DELETED_USERS = False
 AUTORESET_DELETED_USERS = True
 THREADED = True
 CRON_TIMEOUT = 30
+MAX_INTERVAL_DROP_NS_CACHES = 30
 
 def DBG(thing):
     if DEBUG != True:
@@ -38,9 +39,9 @@ def DBG(thing):
     print("DEBUG@{}({}[{}]) --> {}".format(funcname,callpoint,line,thing))
 
 class QuotaManager:
-    def __init__(self):
+    def __init__(self,enable_cron=True):
         # functions that never try to run natively without n4d, fake client not allowed
-        self.functions_need_root = ['get_quotas','get_userquota','set_userquota','set_status','configure_net_serversync','deconfigure_net_serversync','start_quotas','stop_quotas','read_autofs_file']
+        self.functions_need_root = ['get_quotas','get_userquota','set_userquota','set_status','configure_net_serversync','deconfigure_net_serversync','start_quotas','stop_quotas','read_autofs_file','reset_all_users']
         self.fake_client = False
         self.type_client = None
         self.client = None
@@ -55,7 +56,9 @@ class QuotaManager:
         self.resolution_timer_thread=CRON_TIMEOUT
         self.last_worker_execution=0
         self.exit_thread=False
-        self.make_thread_cron()
+        if enable_cron:
+            self.make_thread_cron()
+        self.last_ns_drop_cache = 0
 
     def make_thread_cron(self):
         if not self.threaded:
@@ -197,10 +200,14 @@ class QuotaManager:
             return []
 
     def drop_ns_caches(self):
+        t = int(time.time())
+        if t < self.last_ns_drop_cache + MAX_INTERVAL_DROP_NS_CACHES:
+            return
         dbs=['group','passwd']
         try:
             for db in dbs:
                 subprocess.check_call(['/usr/sbin/nscd','--invalidate='+db],env=self.make_env())
+            self.last_ns_drop_cache = t
         except:
             pass
 
@@ -1046,9 +1053,14 @@ class QuotaManager:
 
         # THIRD PASS(B): ADD POSSIBLE USER/GROUP DIFERENCES INTO DICT THAT REPRESENTS FILE AND ASSING DEFAULT QUOTAS
         users = self.get_system_users()
-        for user in users:
-            if user not in qfile['users']:
-                qfile['users'].setdefault(user,{'quota':0,'margin':0})
+        new_users = [ user for user in users if user not in qfile['users'] ]
+        deleted_users = [ user for user in qfile['users'] if user not in users ]
+        #for user in users:
+        #    if user not in qfile['users']:
+        for user in new_users:
+            qfile['users'].setdefault(user,{'quota':0,'margin':0})
+        for user in deleted_users:
+            qfile['users'].pop(user,None)
         for g in sysgroups:
             if g not in qfile['groups']:
                 qfile['groups'].setdefault(g,{'quota':0,'margin':0})
@@ -1545,8 +1557,10 @@ class QuotaManager:
         types = {
                 'quotaon': {'script': scripts_path + 'quotaon.sh', 'checker': self.check_quotas_status, 'args': {'status':{'user':'on','group':'on','project':'off'},'device':'all','quotatype':['user','group']} },     # todo: check/handle project quotas
                 'quotaoff': {'script': scripts_path + 'quotaoff.sh', 'checker': self.check_quotas_status, 'args': {'status':{'user':'off','group':'off','project':'off'},'device':'all','quotatype':['user','group']} }, # todo: check/handle project quotas 
-                'quotarpc': {'script': scripts_path + 'quotarpc.sh', 'checker': self.check_rquota_active }
+                'quotarpc': {'script': '/usr/sbin/rpc.rquotad', 'checker': self.check_rquota_active }
                 }
+                #'quotarpc': {'script': scripts_path + 'quotarpc.sh', 'checker': self.check_rquota_active }
+                #}
         if type not in types.keys():
             raise ValueError('{} not valid type for activation'.format(type))
         if silent:
@@ -1679,11 +1693,17 @@ class QuotaManager:
             return str(e)
 
     def reset_user(self,user):
-        self.set_userquota(user,0)
+        try:
+            return self.set_userquota(user,0)
+        except Exception as e:
+            return str(e)
 
     @proxy
     def reset_all_users(self):
-        self.set_quota_user(user='all',quota=0,margin=0,filterbygroup=[])
+        try:
+            return self.set_quota_user(user='all',quota=0,margin=0,filterbygroup=[])
+        except Exception as e:
+            return str(e)
 
     @proxy
     def set_groupquota(self,group,quota,*args,**kwargs):

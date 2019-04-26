@@ -21,4 +21,4 @@ get_local_status=sudo,admin,admins
 read_autofs_file=sudo,admin,admins
 get_groups=sudo,admin,admins
 reset_user=sudo,admin,admins
-reset_all_user=sudo,admin,admins
+reset_all_users=sudo,admin,admins
