@@ -40,6 +40,9 @@ if __name__=='__main__':
     g.add_argument('-sgq','--set-group-quota',metavar=('GROUPNAME','QUOTAVALUE','MARGINVALUE'),nargs=3,help='Set quota for group')
     g.add_argument('-gq','--get-quota',metavar='USER',nargs=1,help='Get quota for user')
 
+    g.add_argument('-ru','--reset-user',metavar='USER',nargs=1,help='Reset quota for user')
+    g.add_argument('-ra','--reset-all-users',metavar='',action='store_const',help='Reset all user quotas',const=True)
+
     args = parser.parse_args()
     if ( args.user and not args.password ) or ( args.password and not args.user ):
         print('Need user and password parameters')
@@ -56,13 +59,13 @@ if __name__=='__main__':
         except Exception as e:
             print('Error getting xmlrpc client, {}, trying to do direct call with QuotaManager'.format(e))
             try:
-                qm = QuotaManager()
+                qm = QuotaManager(False)
                 c = None
             except Exception as e2:
                 print('Error getting xmlrpc client (fallback to direct call with QuotaManager), {}'.format(e2))
     else:
         try:
-            qm = QuotaManager()
+            qm = QuotaManager(False)
         except Exception as e:
             print('Error getting QuotaManager instance, {}'.format(e))
 
@@ -191,7 +194,7 @@ if __name__=='__main__':
             to_print=''
             try:
                 if 'users' in ret:
-                    print('aa{}\n\n'.format(ret['users']))
+                    #print('aa{}\n\n'.format(ret['users']))
                     for user in sorted([u for u in ret['users']]):
                         a='{:15}'.format('quota')
                         b='{:15}'.format('margin')
@@ -303,3 +306,31 @@ if __name__=='__main__':
             except Exception as e:
                 print('Error rpc client not available, aborting, {}'.format(e))
 
+    if args.reset_user:
+        user = args.reset_user
+        if type(user) == type(list()):
+            user = user[0]
+        if c is None:
+            if qm:
+                print(qm.reset_user(user))
+            else:
+                print('Error QuotaManager not available, aborting')
+        else:
+            try:
+                arguments=(auth,module,user)
+                print(c.reset_user(*arguments))
+            except Exception as e:
+                print('Error rpc client not available, aborting, {}'.format(e))
+
+    if args.reset_all_users:
+        if c is None:
+            if qm:
+                print(qm.reset_all_users())
+            else:
+                print('Error QuotaManager not available, aborting')
+        else:
+            try:
+                arguments=(auth,module)
+                print(c.reset_all_users(*arguments))
+            except Exception as e:
+                print('Error rpc client not available, aborting, {}'.format(e))

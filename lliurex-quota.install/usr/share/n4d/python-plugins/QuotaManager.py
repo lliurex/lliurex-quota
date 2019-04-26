@@ -39,9 +39,9 @@ def DBG(thing):
     print("DEBUG@{}({}[{}]) --> {}".format(funcname,callpoint,line,thing))
 
 class QuotaManager:
-    def __init__(self):
+    def __init__(self,enable_cron=True):
         # functions that never try to run natively without n4d, fake client not allowed
-        self.functions_need_root = ['get_quotas','get_userquota','set_userquota','set_status','configure_net_serversync','deconfigure_net_serversync','start_quotas','stop_quotas','read_autofs_file']
+        self.functions_need_root = ['get_quotas','get_userquota','set_userquota','set_status','configure_net_serversync','deconfigure_net_serversync','start_quotas','stop_quotas','read_autofs_file','reset_all_users']
         self.fake_client = False
         self.type_client = None
         self.client = None
@@ -56,7 +56,8 @@ class QuotaManager:
         self.resolution_timer_thread=CRON_TIMEOUT
         self.last_worker_execution=0
         self.exit_thread=False
-        self.make_thread_cron()
+        if enable_cron:
+            self.make_thread_cron()
         self.last_ns_drop_cache = 0
 
     def make_thread_cron(self):
@@ -1692,11 +1693,17 @@ class QuotaManager:
             return str(e)
 
     def reset_user(self,user):
-        self.set_userquota(user,0)
+        try:
+            return self.set_userquota(user,0)
+        except Exception as e:
+            return str(e)
 
     @proxy
     def reset_all_users(self):
-        self.set_quota_user(user='all',quota=0,margin=0,filterbygroup=[])
+        try:
+            return self.set_quota_user(user='all',quota=0,margin=0,filterbygroup=[])
+        except Exception as e:
+            return str(e)
 
     @proxy
     def set_groupquota(self,group,quota,*args,**kwargs):
