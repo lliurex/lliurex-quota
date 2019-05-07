@@ -43,6 +43,9 @@ if __name__=='__main__':
     g.add_argument('-ru','--reset-user',metavar='USER',nargs=1,help='Reset quota for user')
     g.add_argument('-ra','--reset-all-users',metavar='',action='store_const',help='Reset all user quotas',const=True)
 
+    g.add_argument('-mq','--my-quota',metavar='',action='store_const',help='Get my current quota',const=True)
+
+
     args = parser.parse_args()
     if ( args.user and not args.password ) or ( args.password and not args.user ):
         print('Need user and password parameters')
@@ -68,6 +71,16 @@ if __name__=='__main__':
             qm = QuotaManager(False)
         except Exception as e:
             print('Error getting QuotaManager instance, {}'.format(e))
+
+    if args.my_quota:
+        if c is not None:
+            print 'Not available'
+            sys.exit(1)
+        if not qm:
+            print 'Not available, error'
+            sys.exit(1)
+        print qm.myquota()
+        sys.exit(0)
 
     if args.configure_serversync:
         if c is None: # direct call, no need n4d call

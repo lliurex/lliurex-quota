@@ -22,3 +22,5 @@ read_autofs_file=sudo,admin,admins
 get_groups=sudo,admin,admins
 reset_user=sudo,admin,admins
 reset_all_users=sudo,admin,admins
+myquota=anonymous
+get_myquota_proxied=anonymous

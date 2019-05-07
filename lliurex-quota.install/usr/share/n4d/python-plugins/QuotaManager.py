@@ -27,6 +27,7 @@ AUTORESET_DELETED_USERS = True
 THREADED = True
 CRON_TIMEOUT = 30
 MAX_INTERVAL_DROP_NS_CACHES = 30
+MAX_MYQUOTA_INTERVAL = 120
 
 def DBG(thing):
     if DEBUG != True:
@@ -42,6 +43,7 @@ class QuotaManager:
     def __init__(self,enable_cron=True):
         # functions that never try to run natively without n4d, fake client not allowed
         self.functions_need_root = ['get_quotas','get_userquota','set_userquota','set_status','configure_net_serversync','deconfigure_net_serversync','start_quotas','stop_quotas','read_autofs_file','reset_all_users']
+        self.anon_functions = ['get_myquota_proxied']
         self.fake_client = False
         self.type_client = None
         self.client = None
@@ -59,6 +61,8 @@ class QuotaManager:
         if enable_cron:
             self.make_thread_cron()
         self.last_ns_drop_cache = 0
+        # cache get myquota
+        self.myquota_data = {}
 
     def make_thread_cron(self):
         if not self.threaded:
@@ -164,11 +168,14 @@ class QuotaManager:
                     if type(self.auth) == type(None):
                         if cparams and len(cparams) == 2 and type(cparams[0]) == type(str()) and type(cparams[1]) == type(str()):
                                 self.auth = cparams
-                    if type(self.auth) == type(None):
-                        self.auth = self.get_auth(func.__name__)
-                    if type(self.auth) == type(None):
-                        ret = "N4D doesn't provide this function, check n4d configuration"
-                        return ret
+                    if func.__name__ in self.anon_functions:
+			self.auth = ''
+		    else:
+                        if type(self.auth) == type(None):
+                            self.auth = self.get_auth(func.__name__)
+                        if type(self.auth) == type(None):
+                            ret = "N4D doesn't provide this function, check n4d configuration"
+                            return ret
                     params = []
                     params.append(self.auth)
                     params.append('QuotaManager')
@@ -206,7 +213,7 @@ class QuotaManager:
         dbs=['group','passwd']
         try:
             for db in dbs:
-                subprocess.check_call(['/usr/sbin/nscd','--invalidate='+db],env=self.make_env())
+                subprocess.check_call(['/usr/sbin/nscd','--invalidate='+db],env=self.make_env(),stderr=open(os.devnull,'w'), stdout=open(os.devnull,'w'))
             self.last_ns_drop_cache = t
         except:
             pass
@@ -1245,13 +1252,16 @@ class QuotaManager:
         else:
             uparam = ''
         try:
-            out = subprocess.check_output(['quota','-v',uparam,'-w','-p','-F',format,'-u',user],env=self.make_env())
+            if uparam:
+                out = subprocess.check_output(['/usr/bin/quota','-v',uparam,'-w','-p','-F',format,'-u',user],env=self.make_env(),stderr=open(os.devnull,'w'))
+            else:
+                out = subprocess.check_output(['/usr/bin/quota','-v','-w','-p','-F',format,'-u',user],env=self.make_env(),stderr=open(os.devnull,'w'))
         except subprocess.CalledProcessError as e:
             if hasattr(e,'output'):
                 out = e.output.strip()
             else:
                 raise SystemError('Error getting quota for user {} , {}'.format(user,e))
-        except:
+        except Exception as e:
             raise SystemError('Error getting quota for user {}, {}'.format(user,e))
 
         quotainfo={}
@@ -1681,6 +1691,29 @@ class QuotaManager:
         return retlist
 
     @proxy
+    def get_myquota_proxied(self,user):
+        ctime = int(time.time())
+        myquota = self.myquota_data.get(user,None)
+        if myquota:
+            myquota_time = myquota.get('time',None)
+            if ctime < myquota_time + MAX_MYQUOTA_INTERVAL:
+                return '{},{},{},{}'.format(True,user,myquota.get('used',None),myquota.get('quota',None))
+        else:
+            try:
+                quota = self.get_quota_user2(user=user,quotamanager=False,extended_info=True,humanunits=False)
+                if not isinstance(quota,dict):
+                    raise ValueError('Invalid quota value got from server')
+            except Exception as e:
+                return '{},{},{}'.format(False,user,e)
+            if quota:
+                quota_used=quota.get('spaceused',None)
+                quota_hard=quota.get('spacehardlimit',None)
+            else:
+                return '{},{}'.format(False,user)
+            self.myquota_data[user] = {'time':ctime,'used':quota_used,'quota':quota_hard}
+            return '{},{},{},{}'.format(True,user,quota_used,quota_hard)
+
+    @proxy
     def set_userquota(self,user,quota,*args,**kwargs):
         if len(args) == 0:
             margin = 0
@@ -1887,6 +1920,18 @@ class QuotaManager:
         except Exception as e:
             print('Exception occured, {}'.format(e))
             return False
+
+    def myquota(self):
+        user_id = os.getuid()
+        if user_id:
+            user_name = pwd.getpwuid(user_id)
+            try:
+                user_name = user_name.pw_name
+            except:
+                return '{}'.format(False)
+        else:
+            return '{},{}'.format(False,user_id)
+        return self.get_myquota_proxied(user_name)
 
     def periodic_actions(self):
         if self.get_status():
