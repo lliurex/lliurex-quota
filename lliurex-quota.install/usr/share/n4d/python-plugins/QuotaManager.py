@@ -1265,8 +1265,13 @@ class QuotaManager:
             raise SystemError('Error getting quota for user {}, {}'.format(user,e))
 
         quotainfo={}
-        out = out.split('\n')[2]
-        out = out.split()
+        if not out:
+            raise ValueError('Quota not enabled')
+        try:
+            out = out.split('\n')[2]
+            out = out.split()
+        except:
+            raise ValueError('Quota format wrong')
         if not extended_info:
             quotainfo = out[3]
         else:
@@ -1703,8 +1708,11 @@ class QuotaManager:
                 quota = self.get_quota_user2(user=user,quotamanager=False,extended_info=True,humanunits=False)
                 if not isinstance(quota,dict):
                     raise ValueError('Invalid quota value got from server')
+            except ValueError as e:
+                return '{},{},{}'.format(False,user,'Quota not available '+str(e))
             except Exception as e:
-                return '{},{},{}'.format(False,user,e)
+                import traceback
+                return '{},{},{}'.format(False,user,e+' '+traceback.format_exc())
             if quota:
                 quota_used=quota.get('spaceused',None)
                 quota_hard=quota.get('spacehardlimit',None)
