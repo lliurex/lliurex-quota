@@ -1,3 +1,9 @@
+lliurex-quota (0.1.3.23) bionic; urgency=medium
+
+  * Add logging subsystem
+
+ -- M.Angel Juan <m.angel.juan@gmail.com>  Mon, 01 Jul 2019 13:55:32 +0200
+
 lliurex-quota (0.1.3.22) bionic; urgency=medium
 
   * Get current user's quota as anonymous methods
