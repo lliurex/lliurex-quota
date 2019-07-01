@@ -10,6 +10,8 @@ import pwd
 import grp
 import ldap
 import threading
+import logging as _logging
+import logging.handlers as _handlers
 
 from functools import wraps
 import inspect
@@ -18,7 +20,6 @@ import inspect
 # TODO:
 # -Allow use rquotad with parameter -S allowing set remote quotas from nfs share edquota -Frpc -u <user>
 # -Check run inside master|slave|independent server(maybe detecting mount with nfs type), maybe repquota (not support -Frpc) is not valid and we've to fallback to setquota|getquota
-# -If it's a client must be n4d call to check quotas (not necesary to set quotas)
 #
 
 DEBUG = False
@@ -28,6 +29,21 @@ THREADED = True
 CRON_TIMEOUT = 30
 MAX_INTERVAL_DROP_NS_CACHES = 30
 MAX_MYQUOTA_INTERVAL = 120
+
+
+LOGFORMAT='QuotaManager:%(lineno)d:%(levelname)s:> %(message)s'
+_logging.basicConfig(format=LOGFORMAT)
+logging = _logging.getLogger()
+_syslog_handler = _handlers.SysLogHandler(address='/dev/log')
+_syslog_handler.setFormatter(_logging.Formatter(fmt=LOGFORMAT))
+if DEBUG:
+	logging.setLevel(_logging.DEBUG)
+	_syslog_handler.setLevel(_logging.DEBUG)
+else:
+	logging.setLevel(_logging.INFO)
+	_syslog_handler.setLevel(_logging.INFO)
+
+logging.addHandler(_syslog_handler)
 
 def DBG(thing):
     if DEBUG != True:
@@ -76,7 +92,7 @@ class QuotaManager:
 
     def get_client(self,xmlrpc=None):
         if xmlrpc != None and DEBUG:
-            print('Getting client overriding xmlrpc to: {}'.format(xmlrpc))
+            logging.debug('Getting client overriding xmlrpc to: {}'.format(xmlrpc))
             self.client = None
         if type(self.client) == type(None):
             self.client = self.init_client(xmlrpc)
@@ -101,17 +117,14 @@ class QuotaManager:
             return self.ask_auth()
 
     def proxy(func,*args,**kwargs):
-        if DEBUG:
-            print 'into call {} {} {}'.format(func,args,kwargs)
+        logging.debug('into call {} {} {}'.format(func,args,kwargs))
         def decorator(self,*args,**kwargs):
-            if DEBUG:
-                print 'into decorator {} {} {}'.format(self,args,kwargs)
+            logging.debug('into decorator {} {} {}'.format(self,args,kwargs))
 
             @wraps(func)
             def wrapper(*args,**kwargs):
                 ret = "CALLING ERROR"
-                if DEBUG:
-                    print('into wrapper({}) {} {}'.format(func.__name__,args,kwargs))
+                logging.debug('into wrapper({}) {} {}'.format(func.__name__,args,kwargs))
                 if self.type_client == 'slave':
                     # functions that can be done on ((if condition) slave machine), not need to proxy through master server
                     exceptions_function_cut_expansion = ['detect_remote_nfs_mount','read_autofs_file']
@@ -123,28 +136,24 @@ class QuotaManager:
                     if os.getuid() != 0:
                         self.fake_client = False
                         rpcserver='http://127.0.0.1:9779' # manual-mode
-                        if DEBUG:
-                            print('Overriding fake mode')
+                        logging.debug('Overriding fake mode')
 
                 if self.fake_client or func.__name__ in exceptions_function_cut_expansion:
-                    if DEBUG:
-                        print('Running fake mode')
+                    logging.debug('Running fake mode')
                     try:
                         ret = func(self,*args,**kwargs)
                     except Exception as e:
-                        print('Error calling {} with cut expansion, exception: {}'.format(func.__name__,e))
-                    if DEBUG:
-                        print('Result from {}:\n{}\n'.format(func.__name__,ret))
+                        logging.critical('Error calling {} with cut expansion, exception: {}'.format(func.__name__,e))
+                    logging.debug('Result from {}:\n{}\n'.format(func.__name__,ret))
                 else:
-                    if DEBUG:
-                        print('Running xmlrpc mode')
+                    logging.debug('Running xmlrpc mode')
                     try:
                         self.client = self.get_client(xmlrpc=rpcserver)
                     except Exception as e:
                         if rpcserver:
-                            print('Exception when getting a client with custom rpcserver({}), {}'.format(rpcserver,e))
+                            logging.critical('Exception when getting a client with custom rpcserver({}), {}'.format(rpcserver,e))
                         else:
-                            print('Exception when getting a client, {}'.format(e))
+                            logging.critical('Exception when getting a client, {}'.format(e))
                     try:
                         self.client.listMethods()
                         #
@@ -154,10 +163,9 @@ class QuotaManager:
                     #except ResponseNotReady as e:
                     #    print('Couldn\'t create N4D client, aborting call ({}), {}'.format(func.__name__,e))
                     except Exception as e:
-                        print('Couldn\'t create N4D client, aborting call ({}),{}'.format(func.__name__,e))
+                        logging.critical('Couldn\'t create N4D client, aborting call ({}),{}'.format(func.__name__,e))
                         return
-                    if DEBUG:
-                        print('running n4d mode with server {}'.format(self.n4d_server))
+                    logging.debug('running n4d mode with server {}'.format(self.n4d_server))
                     cparams=None
                     for frameinfo in inspect.stack():
                         if frameinfo[3] == '_dispatch':
@@ -180,14 +188,11 @@ class QuotaManager:
                     params.append(self.auth)
                     params.append('QuotaManager')
                     params.extend(args)
-                    if DEBUG:
-                        print('calling {} with params {}'.format(func.__name__,params))
+                    logging.debug('calling {} with params {}'.format(func.__name__,params))
                     ret = getattr(self.client,func.__name__)(*params)
-                    if DEBUG:
-                        print('Result from {}:\n{}\n'.format(func.__name__,ret))
+                    logging.debug('Result from {}:\n{}\n'.format(func.__name__,ret))
                 return ret
-            if DEBUG:
-                print 'created wrapper {} {}'.format(args,kwargs)
+            logging.debug('created wrapper {} {}'.format(args,kwargs))
             return wrapper(*args,**kwargs)
         return decorator
 
@@ -232,7 +237,7 @@ class QuotaManager:
         try:
             return self.detect_nfs_mount(mount)
         except Exception as e:
-            print('Error detecting nfs mount, {}'.format(e))
+            logging.error('Error detecting nfs mount, {}'.format(e))
             return None
 
     def try_to_automount(self):
@@ -269,7 +274,7 @@ class QuotaManager:
             else:
                 return False
         except Exception as e:
-            print('Exception checking slave network, {}'.format(e))
+            logging.warning('Exception checking slave network, {}'.format(e))
             return None
 
     def detect_running_system(self):
@@ -304,7 +309,7 @@ class QuotaManager:
                     self.fake_client = True
                     type_client = 'independent'
             except Exception as e:
-                print('Exception checking type of server, {}'.format(e))
+                logging.error('Exception checking type of server, {}'.format(e))
         elif srv_ip is not None: # dns 'server' is known but is not assigned to me, maybe i am a client
             type_client = 'client'
             self.fake_client = False
@@ -378,8 +383,7 @@ class QuotaManager:
             try:
                 type = self.detect_running_system()
             except Exception as e:
-                if DEBUG:
-                    print('Exception initiating client, {}'.format(e))
+                logging.error('Exception initiating client, {}'.format(e))
             url = ''
             if type == 'master':
                 url = 'fake'    # try to run directly without rpc
@@ -388,12 +392,12 @@ class QuotaManager:
             elif type == 'slave': # slave's routes his calls to master server
                 url = 'https://10.3.0.254:9779' # slave's routes through master server
                 if not self.check_ping('10.3.0.254'):
-                    print('Nfs master server is not reachable!')
+                    logging.warning('Nfs master server is not reachable!')
             else:
                 try:
                     srv_ip = socket.gethostbyname('server')
                     if not self.check_ping(srv_ip):
-                        print('server {} is not reachable!'.format(srv_ip))
+                        logging.warning('server {} is not reachable!'.format(srv_ip))
                 except:
                     srv_ip = None
                 url = 'https://'+str(srv_ip)+':9779'
@@ -472,7 +476,7 @@ class QuotaManager:
         try:
             mounts = self.get_fstab_mounts()
         except Exception as e:
-            print('Error getting fstab mounts, {}'.format(e))
+            logging.error('Error getting fstab mounts, {}'.format(e))
             raise e
         out = None
         try:
@@ -487,7 +491,7 @@ class QuotaManager:
                 targetfs = out['filesystems'][0]['source']
                 targetmnt = out['filesystems'][0]['target']
         except Exception as e:
-            print('Error getting mount mapping, {}'.format(e))
+            logging.error('Error getting mount mapping, {}'.format(e))
             raise e
         try:
             if targetfs in [ x['fs'] for x in mounts ]:
@@ -729,15 +733,15 @@ class QuotaManager:
         try:
             self.activate('quotaoff')
         except Exception as e:
-            print('Fail deactivating quotas {}'.format(e))
+            logging.error('Fail deactivating quotas {}'.format(e))
         for target in targets:
             try:
                 self.remount(target['mountpoint'],forceumount=False)
             except:
                 if target['mountpoint'] == "/":
-                    print "WARNING: Forced umount not allowed on / need to restart"
+                    logging.warning("WARNING: Forced umount not allowed on / need to restart")
                 else:
-                    print "Forced remount for path {}".format(target['mointpoint'])
+                    logging.warning("Forced remount for path {}".format(target['mointpoint']))
                     self.remount(target['mountpoint'],forceumount=True)
         for file in quotafiles:
             os.unlink(file)
@@ -746,7 +750,7 @@ class QuotaManager:
             try:
                 self.activate('quotaon')
             except Exception as e:
-                print('Fail activating quotas, {}'.format(e))
+                logging.error('Fail activating quotas, {}'.format(e))
         return True
 
     def remount(self,mount='all',forceumount=False):
@@ -874,7 +878,7 @@ class QuotaManager:
         try:
             self.activate('quotaoff')
         except Exception as e:
-            print('Fail deactivating quotas {}'.format(e))
+            logging.error('Fail deactivating quotas {}'.format(e))
         for target in targets:
             try:
                 out=subprocess.check_output(['quotacheck','-vguma'],stderr=subprocess.STDOUT,env=self.make_env())
@@ -889,7 +893,7 @@ class QuotaManager:
             self.activate('quotaon')
             self.activate('quotarpc')
         except Exception as e:
-            print('Fail activating quotas {}'.format(e))
+            logging.error('Fail activating quotas {}'.format(e))
         return True
 
     def get_system_users(self,use_cache=False):
@@ -1001,15 +1005,14 @@ class QuotaManager:
                     return ret
             except Exception as e:
                 import traceback
-                print('{},\n{}'.format(e,traceback.print_exc()))
+                logging.info('{},\n{}'.format(e,traceback.print_exc()))
 
-        if DEBUG:
-            print('init normalize')
+        logging.debug('init normalize')
 
         # FIRST PASS(A): GET QUOTAS APPLIED ON SYSTEM
         quotas = self.get_quotas(humanunits=False,quotamanager=True)
-        if DEBUG:
-            print('quotas from fs (raw) (absolute values) {}'.format(print_dict_ordered(quotas)))
+        #logging.debug('quotas from fs (raw) (absolute values) {}'.format(print_dict_ordered(quotas)))
+	logging.debug('quotas from fs (raw) (absolute values) {}'.format(quotas))
         qdict = {}
 
         def abs_to_relative(soft,hard):
@@ -1024,8 +1027,8 @@ class QuotaManager:
         for quotauser in quotas:
             qdict.setdefault(quotauser,abs_to_relative(quotas[quotauser]['spacesoftlimit'],quotas[quotauser]['spacehardlimit']))
 
-        if DEBUG:
-            print('qdict (quotas from fs (not absolute values)) {}'.format(print_dict_ordered(qdict)))
+        #logging.debug('qdict (quotas from fs (not absolute values)) {}'.format(print_dict_ordered(qdict)))
+	logging.debug('qdict (quotas from fs (not absolute values)) {}'.format(qdict))
 
         # qdict stores quotas readed from quota subsystem calling repquota, qdict represents actual quotas used by fs
 
@@ -1042,9 +1045,8 @@ class QuotaManager:
                     users_into_groups[user].append(x);
                 else:
                     users_into_groups.setdefault(user,[x]);
-        if DEBUG:
-            print('System groups: {}'.format(sysgroups))
-            print('Users into groups: {}'.format(users_into_groups))
+        logging.debug('System groups: {}'.format(sysgroups))
+        logging.debug('Users into groups: {}'.format(users_into_groups))
 
         # THIRD PASS(A): GET ALL QUOTAS CONFIGURED FROM APPLICATION OR BUILD NEW FILE WITH DEFAULT QUOTAS
         try:
@@ -1071,9 +1073,8 @@ class QuotaManager:
         for g in sysgroups:
             if g not in qfile['groups']:
                 qfile['groups'].setdefault(g,{'quota':0,'margin':0})
-        if DEBUG:
-            print('qfile (quotas from/to configfile) {}'.format(print_dict_ordered(qfile)))
-
+        #logging.debug('qfile (quotas from/to configfile) {}'.format(print_dict_ordered(qfile)))
+	logging.debug('qfile (quotas from/to configfile) {}'.format(qfile))
         # override the minium quota, user or group quota (mandatory)
 
         # FOURTH PASS: CALCULATE USER QUOTAS TO BE APPLIED FUNCTION OF MEMBER OF GROUPS
@@ -1095,8 +1096,10 @@ class QuotaManager:
                     if user_from_sysgroup in qfile['users'] and 'quota' in qfile['users'][user_from_sysgroup]:
                         if qfile['users'][user_from_sysgroup]['quota'] == 0: # IF USER QUOTA APPLIED OVERRIDE WILL NOT BE DONE
                             override_quotas.setdefault(user_from_sysgroup,qfile['groups'][mandatory_group]) 
-        if DEBUG:
-            print('Overriding quotas for user {}'.format(override_quotas.keys()))
+        if len(override_quotas.keys()) > 0:
+		logging.info('Overriding quotas for user {}'.format(override_quotas.keys()))
+	else:
+		logging.debug('No needed to override any quota')
 
         # begin normalization process
         # FIFTH PASS: NORMALIZE QUOTA & MARGIN VALUES 
@@ -1118,9 +1121,8 @@ class QuotaManager:
 
             # real quota must ignore that (moving data) increase of size 
 
-                    if DEBUG:
-                        print('Getting moving for user ({}) --> {}'.format(user,dpath))
-                        print 'moving quota {}'.format(userinfo[user]['moving_quota'])
+                    logging.debug('Getting moving for user ({}) --> {}'.format(user,dpath))
+                    logging.debug('moving quota {}'.format(userinfo[user]['moving_quota']))
 
                     userinfo[user]['normquota']['hard'] = userinfo[user]['quota']['quota'] + userinfo[user]['quota']['margin'] + (userinfo[user]['moving_quota'] * 2)
                     userinfo[user]['normquota']['soft'] = userinfo[user]['quota']['quota'] + (userinfo[user]['moving_quota'] * 2) 
@@ -1129,11 +1131,10 @@ class QuotaManager:
                     userinfo[user]['normquota']['soft'] = userinfo[user]['quota']['quota']
             except Exception as e:
                 import traceback
-                if DEBUG:
-                    print("ERROR NORMALIZING {} {} {}".format(str(e),traceback.format_exc(),user))
+                logging.error("ERROR NORMALIZING {} {} {}".format(str(e),traceback.format_exc(),user))
                 return "{} {} {}".format(str(e),traceback.format_exc(),user)
-        if DEBUG:
-            print('userinfo (normalized data) {}'.format(print_dict_ordered(userinfo)))
+        #logging.debug('userinfo (normalized data) {}'.format(print_dict_ordered(userinfo)))
+	logging.debug('userinfo (normalized data) {}'.format(userinfo))
 
         # userinfo stores the quotas that should be applied to fs
 
@@ -1144,8 +1145,7 @@ class QuotaManager:
                 utmp=user
                 if user in qdict:
                     if int(quotas[user]['spacesoftlimit']) != int(userinfo[user]['normquota']['soft']) or int(quotas[user]['spacehardlimit']) != int(userinfo[user]['normquota']['hard']):
-                        if DEBUG:
-                            print('MODIFY USER {} ({},{}) vs ({},{})'.format(user,quotas[user]['spacesoftlimit'],quotas[user]['spacehardlimit'],userinfo[user]['normquota']['soft'],userinfo[user]['normquota']['hard']))
+                        logging.debug('MODIFY USER {} ({},{}) vs ({},{})'.format(user,quotas[user]['spacesoftlimit'],quotas[user]['spacehardlimit'],userinfo[user]['normquota']['soft'],userinfo[user]['normquota']['hard']))
                         qdict2.setdefault(user,abs_to_relative(userinfo[user]['normquota']['soft'],userinfo[user]['normquota']['hard']))
                 #if userinfo[user]['quota']['quota'] == 0:
                 #    if user in qdict and qdict[user]['quota'] != userinfo[user]['quota']['quota']:
@@ -1155,17 +1155,15 @@ class QuotaManager:
                 #        qdict2.setdefault(user,{'quota':userinfo[user]['normquota']['soft'],'margin':userinfo[user]['normquota']['hard']-userinfo[user]['normquota']['soft']})
         except Exception as e:
             import traceback
-            if DEBUG:
-                "ERROR COMPARING QUOTAS {} {} {}".format(str(e),traceback.format_exc(),qdict[utmp])
+            logging.debug("ERROR COMPARING QUOTAS {} {} {}".format(str(e),traceback.format_exc(),qdict[utmp]))
             return "{} {} {}".format(str(e),traceback.format_exc(),qdict[utmp])
 
         # qdict2 stores only quotas that must be updated
 
         # SIXTH PASS: WRITE CHANGES INTO FILE (IF NEW FILE OR NEW USERS/GROUPS DETECTED) AND APPLY FINAL QUOTAS FOR USERS
 
-        if DEBUG:
-            print('qdict2 (quotas updated) (if empty, none will be updated) {} \nEND\n'.format(print_dict_ordered(qdict2)))
-            print('Writing quotas file:\n{}'.format(qfile))
+        logging.debug('qdict2 (quotas updated) (if empty, none will be updated) {} \nEND\n'.format(print_dict_ordered(qdict2)))
+        logging.debug('Writing quotas file:\n{}'.format(qfile))
         self.set_quotas_file(qfile)
         self.apply_quotasdict(qdict2)
         return True
@@ -1592,7 +1590,7 @@ class QuotaManager:
                     max_errors = max_errors - 1
             if max_errors == 0 and DEBUG:
                 import traceback
-                print("ERROR ACTIVATING '{}', '{}', '{}'".format(type,e,traceback.print_exc()))
+                logging.error("ERROR ACTIVATING '{}', '{}', '{}'".format(type,e,traceback.print_exc()))
 
     def activate_script(self, script):
         checker = script['checker'] if 'checker' in script else None
@@ -1605,27 +1603,23 @@ class QuotaManager:
                 res = checker(**args)
             else:
                 res = checker()
-            if DEBUG:
-                print('Testing activation of {} against {} with result {}'.format(name,args,res))
+            logging.debug('Testing activation of {} against {} with result {}'.format(name,args,res))
 
         if not res:
             if not os.path.isfile(name):
                 raise ValueError('{} not found'.format(name))
             try:
                 subprocess.call([name], shell=True, stderr=open(os.devnull,'w'), stdout=open(os.devnull,'w'), env=self.make_env())
-                if DEBUG:
-                    print('Successfully executed {}'.format(name))
+                logging.debug('Successfully executed {}'.format(name))
             except Exception as e:
-                if DEBUG:
-                    print('Execution of {} Fail, {}'.format(name,e))
+                logging.debug('Execution of {} Fail, {}'.format(name,e))
                 raise SystemError('Error calling {}'.format(name))
             if checker:
                 if args:
                     res = checker(**args)
                 else:
                     res = checker()
-                if DEBUG:
-                    print('Final testing for activation of {} against {} with result {}'.format(name,args,res))
+                logging.debug('Final testing for activation of {} against {} with result {}'.format(name,args,res))
                 if not res:
                     raise SystemError('Error trying to activate {}'.format(name))
         return True
@@ -1758,8 +1752,7 @@ class QuotaManager:
             return str(e)
 
     def apply_quotasdict(self,quotadict):
-        if DEBUG:
-            print('Applying quotas for users {}'.format(quotadict.keys()))
+        logging.debug('Applying quotas for users {}'.format(quotadict.keys()))
         for user in quotadict:
             self.set_userquota(user,quotadict[user]['quota'],quotadict[user]['margin'],persistent=False)
 
@@ -1785,7 +1778,7 @@ class QuotaManager:
                     ret['remote']['status_quotas'] = 'Fail checking if quotas are active on filesystem {}, {}'.format(status.get('fs'),e)
         except Exception as e:
             import traceback
-            print('Fail checking if /net/server-sync are configured, i will use \'all\' as device to check if quotas are active, {}, {}'.format(e,traceback.print_exc()))
+            logging.debug('Fail checking if /net/server-sync are configured, i will use \'all\' as device to check if quotas are active, {}, {}'.format(e,traceback.print_exc()))
             ret['remote']['status_serversync']= status
             try:
                 ret['remote']['status_quotas'] = self.check_active_quotas(status.get('fs'))
@@ -1843,11 +1836,11 @@ class QuotaManager:
             try:
                 status = self.detect_status_folder('/net/server-sync')
             except Exception as e:
-                print('Error getting status of folder /net/server-sync, {}'.format(e))
+                logging.warning('Error getting status of folder /net/server-sync, {}'.format(e))
                 status = None
 
             if not isinstance(status, dict):
-                print('Error unknown type returned from detect_status_folder')
+                logging.warning('Error unknown type returned from detect_status_folder')
                 return None
 
             ret = None
@@ -1860,7 +1853,7 @@ class QuotaManager:
                 self.normalize_quotas()
             return ret
         except Exception as e:
-            print('Exception occured, {}'.format(e))
+            logging.error('Exception occured configuring /net/server-sync, {}'.format(e))
             return False
 
     @proxy
@@ -1869,7 +1862,7 @@ class QuotaManager:
             self.activate('quotaoff')
             return self.check_quotaon()
         except Exception as e:
-            print('Exception occured, {}'.format(e))
+            logging.error('Exception occured stopping quotas, {}'.format(e))
             return False
 
     @proxy
@@ -1878,7 +1871,7 @@ class QuotaManager:
             self.activate('quotaon')
             return self.check_quotaon()
         except Exception as e:
-            print('Exception occured, {}'.format(e))
+            logging.error('Exception occured starting quotas, {}'.format(e))
             return False
 
     def get_groups(self):
@@ -1907,7 +1900,7 @@ class QuotaManager:
                      group_list.append(dic)
             return group_list
         except Exception as e:
-            print('Exception occured, {}'.format(e))
+            logging.error('Exception occured getting groups, {}'.format(e))
             return [e]
 
     @proxy
@@ -1926,7 +1919,7 @@ class QuotaManager:
                 pass
             return ret
         except Exception as e:
-            print('Exception occured, {}'.format(e))
+            logging.error('Exception occured deconfiguring /net/server-sync, {}'.format(e))
             return False
 
     def myquota(self):
@@ -1966,19 +1959,17 @@ class QuotaManager:
             if ctime > self.last_worker_execution + self.resolution_timer_thread: # do jobs
                 self.last_worker_execution=ctime
                 self.worker_code()
-                #print('Done threaded cron at: {}'.format(ctime))
+                logging.debug('Done threaded cron at: {}'.format(ctime))
             time.sleep(0.5)
 
     def worker_code(self):
         try:
-            if DEBUG:
-                print('n4d_cron called')
+            logging.debug('n4d_cron called')
             type = self.detect_running_system()
-            if DEBUG:
-                print('detected {}'.format(type))
+            logging.debug('detected {}'.format(type))
             if type and (type == 'master' or type == 'independent'):
                 self.periodic_actions()
             return True
         except Exception as e:
-            print('Exception occured, {}'.format(e))
+            logging.warning('Exception occured on periodic job, {}'.format(e))
             return False
