@@ -1081,7 +1081,7 @@ class QuotaManager:
 		# override the minium quota, user or group quota (mandatory)
 
 		# FOURTH PASS: CALCULATE USER QUOTAS TO BE APPLIED FUNCTION OF MEMBER OF GROUPS
-		# IF IT IS MEMBER OF TWO GROUPS: UPPER LIMIT IS APPLIED
+		# IF IT IS MEMBER OF TWO GROUPS: LOWER LIMIT IS APPLIED
 		# IF IT HAS USER QUOTA: GROUP QUOTA IS NOT APPLIED
 		override_quotas = {}
 		for sys_group in sysgroups:
@@ -1089,11 +1089,11 @@ class QuotaManager:
 				userlist_from_sys_group = self.get_users_group(sys_group)
 				for user_from_sysgroup in userlist_from_sys_group:
 					mandatory_group = sys_group
-					# SEARCH OTHER GROUPS WITH GREATER QUOTA
+					# SEARCH OTHER GROUPS WITH LOWER QUOTA
 					if user_from_sysgroup in users_into_groups: 
 						for group_of_user in users_into_groups[user_from_sysgroup]:
 							if group_of_user in qfile['groups'] and 'quota' in qfile['groups'][group_of_user]:
-								if qfile['groups'][group_of_user]['quota'] != 0 and qfile['groups'][group_of_user]['quota'] > qfile['groups'][sys_group]['quota']:
+								if qfile['groups'][group_of_user]['quota'] != 0 and qfile['groups'][group_of_user]['quota'] < qfile['groups'][sys_group]['quota']:
 									mandatory_group = group_of_user
 					# SEARCH IF PERSONAL QUOTA IS APPLIED
 					if user_from_sysgroup in qfile['users'] and 'quota' in qfile['users'][user_from_sysgroup]:
