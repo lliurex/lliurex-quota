@@ -117,7 +117,7 @@ class QuotaManager:
 			return self.ask_auth()
 
 	def proxy(func,*args,**kwargs):
-		logging.debug('into call {} {} {}'.format(func,args,kwargs))
+		#logging.debug('Startup actions in proxied call {} {} {}'.format(func,args,kwargs))
 		def decorator(self,*args,**kwargs):
 			#logging.debug('into decorator {} {} {}'.format(self,args,kwargs))
 
@@ -199,7 +199,8 @@ class QuotaManager:
 	def check_ping(self,host):
 		ret = False
 		try:
-			subprocess.check_call(['ping','-c','1',host],stderr=open(os.devnull,'w'),stdout=open(os.devnull,'w'))
+			with open(os.devnull,'w') as dn:
+				subprocess.check_call(['ping','-c','1',host],stderr=dn,stdout=dn)
 			ret = True
 		except:
 			pass
@@ -218,7 +219,8 @@ class QuotaManager:
 		dbs=['group','passwd']
 		try:
 			for db in dbs:
-				subprocess.check_call(['/usr/sbin/nscd','--invalidate='+db],env=self.make_env(),stderr=open(os.devnull,'w'), stdout=open(os.devnull,'w'))
+				with open(os.devnull,'w') as dn:
+					subprocess.check_call(['/usr/sbin/nscd','--invalidate='+db],env=self.make_env(),stderr=dn, stdout=dn)
 			self.last_ns_drop_cache = t
 		except:
 			pass
@@ -242,7 +244,8 @@ class QuotaManager:
 
 	def try_to_automount(self):
 		try:
-			subprocess.check_call(["bash -c 'cd /net/server-sync/home;ls'"],shell=True, stderr=open(os.devnull,'w'), stdout=open(os.devnull,'w'))
+			with open(os.devnull,'w') as dn:
+				subprocess.check_call(["bash -c 'cd /net/server-sync/home;ls'"],shell=True, stderr=dn, stdout=dn)
 		except:
 			pass
 
@@ -1250,10 +1253,11 @@ class QuotaManager:
 		else:
 			uparam = ''
 		try:
-			if uparam:
-				out = subprocess.check_output(['/usr/bin/quota','-v',uparam,'-w','-p','-F',format,'-u',user],env=self.make_env(),stderr=open(os.devnull,'w'))
-			else:
-				out = subprocess.check_output(['/usr/bin/quota','-v','-w','-p','-F',format,'-u',user],env=self.make_env(),stderr=open(os.devnull,'w'))
+			with open(os.devnull,'w') as dn:
+				if uparam:
+					out = subprocess.check_output(['/usr/bin/quota','-v',uparam,'-w','-p','-F',format,'-u',user],env=self.make_env(),stderr=dn)
+				else:
+					out = subprocess.check_output(['/usr/bin/quota','-v','-w','-p','-F',format,'-u',user],env=self.make_env(),stderr=dn)
 		except subprocess.CalledProcessError as e:
 			if hasattr(e,'output'):
 				out = e.output.strip()
@@ -1609,7 +1613,8 @@ class QuotaManager:
 			if not os.path.isfile(name):
 				raise ValueError('{} not found'.format(name))
 			try:
-				subprocess.call([name], shell=True, stderr=open(os.devnull,'w'), stdout=open(os.devnull,'w'), env=self.make_env())
+				with open(os.devnull,'w') as dn:
+					subprocess.call([name], shell=True, stderr=dn, stdout=dn, env=self.make_env())
 				logging.debug('Successfully executed {}'.format(name))
 			except Exception as e:
 				logging.debug('Execution of {} Fail, {}'.format(name,e))
