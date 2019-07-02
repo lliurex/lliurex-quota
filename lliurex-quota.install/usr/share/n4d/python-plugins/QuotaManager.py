@@ -190,7 +190,7 @@ class QuotaManager:
 					params.extend(args)
 					logging.debug('calling {} with params {}'.format(func.__name__,params))
 					ret = getattr(self.client,func.__name__)(*params)
-					logging.debug('Result from {}:\n{}\n'.format(func.__name__,ret))
+					logging.debug('Result from {}: {}\n'.format(func.__name__,ret))
 				return ret
 			#logging.debug('created wrapper {} {}'.format(args,kwargs))
 			return wrapper(*args,**kwargs)
@@ -1702,7 +1702,10 @@ class QuotaManager:
 			myquota_time = myquota.get('time',None)
 			if ctime < myquota_time + MAX_MYQUOTA_INTERVAL:
 				return '{},{},{},{}'.format(True,user,myquota.get('used',None),myquota.get('quota',None))
-		else:
+			else:
+				logging.debug("Cache myquota expired for user {}".format(user))
+				myquota = None
+		if not myquota:
 			try:
 				quota = self.get_quota_user2(user=user,quotamanager=False,extended_info=True,humanunits=False)
 				if not isinstance(quota,dict):
@@ -1718,6 +1721,7 @@ class QuotaManager:
 			else:
 				return '{},{}'.format(False,user)
 			self.myquota_data[user] = {'time':ctime,'used':quota_used,'quota':quota_hard}
+			logging.debug("Setting cache myquota for user {} -> {}".format(user,self.myquota_data[user]))
 			return '{},{},{},{}'.format(True,user,quota_used,quota_hard)
 
 	@proxy
