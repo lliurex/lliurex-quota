@@ -1,3 +1,11 @@
+lliurex-quota (0.1.3.24) bionic; urgency=medium
+
+  * Clear debug output
+  * Changed group rule: lower limit it's applied when user is on >2 groups
+  * Cached exceptions on periodic actions
+
+ -- M.Angel Juan <m.angel.juan@gmail.com>  Tue, 02 Jul 2019 12:36:50 +0200
+
 lliurex-quota (0.1.3.23) bionic; urgency=medium
 
   * Add logging subsystem
