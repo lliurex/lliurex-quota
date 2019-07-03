@@ -986,31 +986,31 @@ class QuotaManager:
 		return dirpath
 
 	def normalize_quotas(self):
-		def print_dict_ordered(d,level=0,filter='^(file|space|quota|margin|norm|hard|soft)',userfilter='alus01',usefilter=False):
-			try:
-				filtered = False
-				ret = ''
-				inc = 4
-				space = ' '*(level+inc)
-				dspace = space + space
-				for x,y in ((ks,d[ks]) for ks in sorted(d.keys())):
-					if usefilter:
-						if not (re.match(filter,x) or re.match(userfilter,x)):
-							filtered = True
-							continue
-					if isinstance(y,dict):
-						ret += '\n{}{}{}{}'.format(space,x,dspace,str(print_dict_ordered(y,level+inc)))
-					else:
-						ret += '\n{}{} -> {}'.format(space,x,y)
-				if filtered:
-					return '{}\nWARNING THIS IS FILTERED DATA, REMOVE FILTER TO VIEW FULL DATA\n'.format(ret)
-				else:
-					return ret
-			except Exception as e:
-				import traceback
-				logging.info('{},\n{}'.format(e,traceback.print_exc()))
+		# def print_dict_ordered(d,level=0,filter='^(file|space|quota|margin|norm|hard|soft)',userfilter='alus01',usefilter=False):
+		# 	try:
+		# 		filtered = False
+		# 		ret = ''
+		# 		inc = 4
+		# 		space = ' '*(level+inc)
+		# 		dspace = space + space
+		# 		for x,y in ((ks,d[ks]) for ks in sorted(d.keys())):
+		# 			if usefilter:
+		# 				if not (re.match(filter,x) or re.match(userfilter,x)):
+		# 					filtered = True
+		# 					continue
+		# 			if isinstance(y,dict):
+		# 				ret += '\n{}{}{}{}'.format(space,x,dspace,str(print_dict_ordered(y,level+inc)))
+		# 			else:
+		# 				ret += '\n{}{} -> {}'.format(space,x,y)
+		# 		if filtered:
+		# 			return '{}\nWARNING THIS IS FILTERED DATA, REMOVE FILTER TO VIEW FULL DATA\n'.format(ret)
+		# 		else:
+		# 			return ret
+		# 	except Exception as e:
+		# 		import traceback
+		# 		logging.info('{},\n{}'.format(e,traceback.print_exc()))
 
-		logging.debug('init normalize')
+		logging.debug('INIT NORMALIZATION PROCESS')
 
 		# FIRST PASS(A): GET QUOTAS APPLIED ON SYSTEM
 		quotas = self.get_quotas(humanunits=False,quotamanager=True)
@@ -1081,24 +1081,81 @@ class QuotaManager:
 		# override the minium quota, user or group quota (mandatory)
 
 		# FOURTH PASS: CALCULATE USER QUOTAS TO BE APPLIED FUNCTION OF MEMBER OF GROUPS
-		# IF IT IS MEMBER OF TWO GROUPS: LOWER LIMIT IS APPLIED
-		# IF IT HAS USER QUOTA: GROUP QUOTA IS NOT APPLIED
 		override_quotas = {}
-		for sys_group in sysgroups:
-			if qfile['groups'][sys_group]['quota'] != 0:
-				userlist_from_sys_group = self.get_users_group(sys_group)
-				for user_from_sysgroup in userlist_from_sys_group:
-					mandatory_group = sys_group
-					# SEARCH OTHER GROUPS WITH LOWER QUOTA
-					if user_from_sysgroup in users_into_groups: 
-						for group_of_user in users_into_groups[user_from_sysgroup]:
-							if group_of_user in qfile['groups'] and 'quota' in qfile['groups'][group_of_user]:
-								if qfile['groups'][group_of_user]['quota'] != 0 and qfile['groups'][group_of_user]['quota'] < qfile['groups'][sys_group]['quota']:
-									mandatory_group = group_of_user
-					# SEARCH IF PERSONAL QUOTA IS APPLIED
-					if user_from_sysgroup in qfile['users'] and 'quota' in qfile['users'][user_from_sysgroup]:
-						if qfile['users'][user_from_sysgroup]['quota'] == 0: # IF USER QUOTA APPLIED OVERRIDE WILL NOT BE DONE
-							override_quotas.setdefault(user_from_sysgroup,qfile['groups'][mandatory_group]) 
+		# CHECK USER QUOTA, IF HAS ONE NONE OF GROUP NEED TO BE USED
+		all_users = qfile['users'].keys()
+		remove_user = []
+		for user in all_users:
+			if 'quota' in qfile['users'][user] and qfile['users'][user]['quota'] != 0:
+				remove_user.append(user)
+		logging.debug('Users with his own user quota: {}'.format(remove_user))
+		for user in remove_user:
+			all_users.remove(user)
+		
+		# CHECK GENERIC GROUPS
+		generic_groups = ['students','teachers','admins']
+		for user in all_users: # (this users have user quota = 0, only uses group quotas) 
+			if user in users_into_groups:
+				groups_from_user = users_into_groups[user]
+			else:
+				logging.debug('*** User out from user-group mapping: {}'.format(user))
+				continue;
+			if not groups_from_user:
+				logging.debug('*** User without group: {}'.format(user))
+				continue;
+			quota_from_group = None
+			for group in [ g for g in groups_from_user if g not in generic_groups ]:
+				if group in qfile['groups'] and qfile['groups'][group]['quota'] != 0:
+					logging.debug('User {} has group quota of {} on {}'.format(user,qfile['groups'][group]['quota'],group))
+					if not quota_from_group:
+						quota_from_group = qfile['groups'][group]
+						logging.debug('New quota is candidate')
+					else:
+						if qfile['groups'][group]['quota'] > quota_from_group['quota']:
+							quota_from_group = qfile['groups'][group]
+							logging.debug('Quota is candidate after comparing with last candidate')
+						else:
+							logging.debug('Quota is not greater than last candidate')
+			if quota_from_group:
+				logging.debug('Group quota found, generic groups not needed')
+			else:
+				for generic_group in generic_groups:
+					if generic_group in groups_from_user and generic_group in qfile['groups'] and qfile['groups'][generic_group]['quota'] != 0:
+						logging.debug('User {} has generic group quota of {} on {}'.format(user,qfile['groups'][generic_group]['quota'],generic_group))
+						if not quota_from_group:
+							quota_from_group = qfile['groups'][generic_group]
+							logging.debug('Generic quota is candidate')
+						else:
+							if qfile['groups'][generic_group]['quota'] > quota_from_group['quota']:
+								quota_from_group = qfile['groups'][generic_group]
+								logging.debug('Generic quota is candidate after comparing with last candidate')
+							else:
+								logging.debug('Generic quota is not greater than last candidate')
+			if quota_from_group:
+				override_quotas.setdefault(user,quota_from_group)
+		
+		################### OLD METHOD
+		####
+		#### IF IT IS MEMBER OF TWO GROUPS: LOWER LIMIT IS APPLIED
+		#### IF IT HAS USER QUOTA: GROUP QUOTA IS NOT APPLIED		
+		#for sys_group in sysgroups:
+		#	if qfile['groups'][sys_group]['quota'] != 0:
+		#		userlist_from_sys_group = self.get_users_group(sys_group)
+		#		for user_from_sysgroup in userlist_from_sys_group:
+		#			mandatory_group = sys_group
+		#			
+		#			# SEARCH OTHER GROUPS WITH LOWER QUOTA
+		#			if user_from_sysgroup in users_into_groups: 
+		#				for group_of_user in users_into_groups[user_from_sysgroup]:
+		#					if group_of_user in qfile['groups'] and 'quota' in qfile['groups'][group_of_user]:
+		#						if qfile['groups'][group_of_user]['quota'] != 0 and qfile['groups'][group_of_user]['quota'] < qfile['groups'][sys_group]['quota']:
+		#							mandatory_group = group_of_user
+		#				
+		#			# SEARCH IF PERSONAL QUOTA IS APPLIED
+		#			if user_from_sysgroup in qfile['users'] and 'quota' in qfile['users'][user_from_sysgroup]:
+		#				if qfile['users'][user_from_sysgroup]['quota'] == 0: # IF USER QUOTA APPLIED OVERRIDE WILL NOT BE DONE
+		#					override_quotas.setdefault(user_from_sysgroup,qfile['groups'][mandatory_group]) 
+		
 		if len(override_quotas.keys()) > 0:
 			logging.info('Overriding quotas for user {}'.format(override_quotas.keys()))
 		else:
@@ -1165,8 +1222,9 @@ class QuotaManager:
 
 		# SIXTH PASS: WRITE CHANGES INTO FILE (IF NEW FILE OR NEW USERS/GROUPS DETECTED) AND APPLY FINAL QUOTAS FOR USERS
 
-		logging.debug('qdict2 (quotas updated) (if empty, none will be updated) {} \nEND\n'.format(print_dict_ordered(qdict2)))
-		logging.debug('Writing quotas file:\n{}'.format(qfile))
+		#logging.debug('qdict2 (quotas updated) (if empty, none will be updated) {}'.format(print_dict_ordered(qdict2)))
+		logging.debug('qdict2 (quotas updated) (if empty, none will be updated) {}'.format(qdict2))
+		logging.debug('Writing quotas file: {}'.format(qfile))
 		self.set_quotas_file(qfile)
 		self.apply_quotasdict(qdict2)
 		return True
@@ -1986,4 +2044,6 @@ class QuotaManager:
 			return True
 		except Exception as e:
 			logging.warning('Exception occured on periodic job, {}'.format(e))
+			import traceback
+			logging.warning('Trace: {}'.format(traceback.format_exc()))
 			return False
