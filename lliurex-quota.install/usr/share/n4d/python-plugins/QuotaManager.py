@@ -478,6 +478,7 @@ class QuotaManager:
 			raise ValueError('Path not found')
 		try:
 			mounts = self.get_fstab_mounts()
+			logging.debug("Detected fstab mounts '{}'".format(mounts))
 		except Exception as e:
 			logging.error('Error getting fstab mounts, {}'.format(e))
 			raise e
@@ -497,9 +498,10 @@ class QuotaManager:
 			logging.error('Error getting mount mapping, {}'.format(e))
 			raise e
 		try:
-			if targetfs in [ x['fs'] for x in mounts ]:
+			if targetfs in [ x['fs'] for x in mounts ] or targetfs in [ x['alias'] for x in mounts ]:
 				return targetfs, targetmnt
 			else:
+				logging.critical("target fs ({}) from /net/server-sync not matched in fstab mounts".format(targetfs))
 				raise LookupError('Filesystem {} not matched from readed fstab'.format(ipath))
 				return None
 		except Exception as e:
@@ -541,7 +543,7 @@ class QuotaManager:
 		out = []
 		try:
 			# each version of lsblk outputs distinct information, this is the safest method
-			ids = subprocess.check_output(['lsblk','-P','-o','KNAME,FSTYPE,MOUNTPOINT,UUID'],env=self.make_env())
+			ids = subprocess.check_output(['lsblk','-P','-o','NAME,FSTYPE,MOUNTPOINT,UUID'],env=self.make_env())
 		except subprocess.CalledProcessError as e:
 			if hasattr(e,'output'):
 				ids = e.output.strip()
@@ -553,13 +555,27 @@ class QuotaManager:
 		ids = ids.strip().split('\n')
 		blklist = []
 		for line in ids:
-			m = re.match(r'^KNAME="(?P<fs>[^"]*)"\s+FSTYPE="(?P<type>[^"]*)"\s+MOUNTPOINT="(?P<mountpoint>[^"]*)"\s+UUID="(?P<uuid>[^"]*)"$',line)
+			m = re.match(r'^NAME="(?P<fs>[^"]*)"\s+FSTYPE="(?P<type>[^"]*)"\s+MOUNTPOINT="(?P<mountpoint>[^"]*)"\s+UUID="(?P<uuid>[^"]*)"$',line)
 			if m:
 				dout = m.groupdict()
 				if 'uuid' in dout and dout['uuid'] != '':
-					if dout['fs'][0:4] != '/dev':
-						dout['fs'] = '/dev/' + dout['fs']
-					blklist.append(dout)
+					if os.path.exists(dout['fs']):
+						blklist.append(dout)
+						continue
+					
+					devfname="{}/{}".format('/dev',dout['fs'])
+					if os.path.exists(devfname):
+						dout['fs'] = devfname
+						blklist.append(dout)
+						continue
+					
+					devfname="{}/{}".format('/dev/mapper',dout['fs'])
+					if os.path.exists(devfname):
+						dout['fs'] = devfname
+						blklist.append(dout)
+						continue
+					
+					logging.warning("Error finding device name {} ".format(dout['fs']))
 		if not blklist:
 			raise EnvironmentError('Couldn\'t get block list uuids, maybe the output format of lsblk ... has changed !!')
 		return blklist
@@ -1204,6 +1220,8 @@ class QuotaManager:
 			for user in userinfo:
 				utmp=user
 				if user in qdict:
+					if user not in quotas:
+						continue
 					if int(quotas[user]['spacesoftlimit']) != int(userinfo[user]['normquota']['soft']) or int(quotas[user]['spacehardlimit']) != int(userinfo[user]['normquota']['hard']):
 						logging.debug('MODIFY USER {} ({},{}) vs ({},{})'.format(user,quotas[user]['spacesoftlimit'],quotas[user]['spacehardlimit'],userinfo[user]['normquota']['soft'],userinfo[user]['normquota']['hard']))
 						qdict2.setdefault(user,abs_to_relative(userinfo[user]['normquota']['soft'],userinfo[user]['normquota']['hard']))
@@ -1516,6 +1534,7 @@ class QuotaManager:
 			raise SystemError('Error checking quotas, {}'.format(e))
 
 	def check_quotas_status(self, status=None, device='all', quotatype='all'):
+		logging.debug("Checking quota status for: status={},device={},quotatype={}".format(status,device,quotatype))
 		valid_types = ['user','group','project']
 		if not status:
 			raise ValueError('Need valid status when check quotas, {}'.format(status))
@@ -1536,6 +1555,7 @@ class QuotaManager:
 					raise TypeError("Type '{}' not valid".format(quotatype))
 
 		status_quotaon = self.check_quotaon()
+		logging.debug("Quota on result: {}".format(status_quotaon))
 		if not status_quotaon: # empty, not configured quotas
 			if status == 'off':
 				return True
@@ -1618,6 +1638,13 @@ class QuotaManager:
 			out.setdefault(line[0],{'mount':{},'device':{}})
 			out[line[0]]['mount'].setdefault(line[1],line[3])
 			out[line[0]]['device'].setdefault(line[2],line[3])
+			try:
+				rn = self.get_realname(line[2])
+				if os.path.exists(rn):
+					out[line[0]].setdefault('alias',{})
+					out[line[0]]['alias'].setdefault(rn,line[3])
+			except Exception as e:
+				pass
 		return out if out else None
 
 	def check_rquota_active(self):
