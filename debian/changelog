@@ -1,3 +1,9 @@
+lliurex-quota (0.1.5) bionic; urgency=medium
+
+  * Fix lvm errors
+
+ -- M.Angel Juan <m.angel.juan@gmail.com>  Wed, 17 Jul 2019 14:48:59 +0200
+
 lliurex-quota (0.1.4.0) bionic; urgency=medium
 
   * New Group quota selection algorithm
