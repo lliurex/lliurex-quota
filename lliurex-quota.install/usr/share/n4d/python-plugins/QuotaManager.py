@@ -1944,6 +1944,8 @@ class QuotaManager:
 				self.remount(status.get('mount'))
 				self.check_quotaon()
 				self.check_quotas_status(status={'user':'on','group':'on','project':'off'},device=status.get('mount'),quotatype=['user','group'])
+				self.set_groupquota(group='teachers',quota='100G')
+				self.set_groupquota(group='students',quota='50G')
 				self.normalize_quotas()
 			return ret
 		except Exception as e:
