@@ -624,7 +624,7 @@ class QuotaManager:
 					logging.debug('Checking {} with {}'.format(linefstab,blk))
 					if linefstab['fs'].lower() == 'uuid='+blk['uuid'].lower():
 						linefstab['fs'] = blk['fs']
-						linefstab['uuid'] = blk['uuid'].lower()
+						linefstab['uuid'] = blk['uuid']
 						break
 				if not linefstab.get('uuid'):
 					logging.error('Error mapping uuid from {}'.format(linefstab))
@@ -647,7 +647,7 @@ class QuotaManager:
 				found = False
 				for blk in blklist:
 					if linefstab['fs'] == blk['fs']:
-						linefstab['uuid'] = blk['uuid'].lower()
+						linefstab['uuid'] = blk['uuid']
 						found = True
 						break
 				if not found:
