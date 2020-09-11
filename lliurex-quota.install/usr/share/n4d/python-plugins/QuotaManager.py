@@ -610,20 +610,25 @@ class QuotaManager:
 			return None
 		try:
 			blklist = self.get_idx_mapping_lsblk()
+			logging.debug('blocklist from lsblk: {}'.format(blklist))
 		except Exception as e:
 			try:
 				blklist = self.get_idx_mapping_blkid()
+				logging.debug('blocklist from blkid: {}'.format(blklist))
 			except Exception as e2:
 				raise SystemError('Couldn\'t get block id\'s !!\nlsblk says: {}\nblkid says: {}\n'.format(e,e2))
 
 		for linefstab in out:
 			if linefstab['fs'].lower()[0:4] == 'uuid':
 				for blk in blklist:
-					if linefstab['fs'].lower() == 'uuid='+blk['uuid']:
+					logging.debug('Checking {} with {}'.format(linefstab,blk))
+					if linefstab['fs'].lower() == 'uuid='+blk['uuid'].lower():
 						linefstab['fs'] = blk['fs']
-						linefstab['uuid'] = blk['uuid']
+						linefstab['uuid'] = blk['uuid'].lower()
 						break
-
+				if not linefstab.get('uuid'):
+					logging.error('Error mapping uuid from {}'.format(linefstab))
+					raise SystemError('Error mapping uuid from {}'.format(linefstab))
 				# check realname, lvm uses symlinks pointing to real kernel name
 				realnamefs = self.get_realname(linefstab['fs'])
 				if realnamefs == linefstab['fs']:
@@ -642,7 +647,7 @@ class QuotaManager:
 				found = False
 				for blk in blklist:
 					if linefstab['fs'] == blk['fs']:
-						linefstab['uuid'] = blk['uuid']
+						linefstab['uuid'] = blk['uuid'].lower()
 						found = True
 						break
 				if not found:
