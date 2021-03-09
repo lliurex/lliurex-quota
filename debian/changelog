@@ -1,3 +1,9 @@
+lliurex-quota (0.1.6.2-focal) focal; urgency=medium
+
+  * Focal port
+
+ -- M.Angel Juan <m.angel.juan@gmail.com>  Tue, 09 Mar 2021 10:01:29 +0100
+
 lliurex-quota (0.1.6.2) bionic; urgency=medium
 
   * Fix uuid case sensible mapping

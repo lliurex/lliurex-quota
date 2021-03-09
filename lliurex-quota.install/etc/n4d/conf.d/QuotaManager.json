@@ -1,0 +1,73 @@
+{
+	"SETUP":{
+		"type": "python",
+		"path": "QuotaManager.py",
+		"class": "QuotaManager"
+	},
+	"METHODS":
+	{
+ 		"get_quotas":{
+			"allowed_groups": ["sudo","admin","admins"]
+		},
+        "get_userquota":{
+			"allowed_groups": ["sudo","admin","admins"]
+		},
+        "set_userquota":{
+			"allowed_groups": ["sudo","admin","admins"]
+		},
+        "set_groupquota":{
+			"allowed_groups": ["sudo","admin","admins"]
+		},
+        "get_status":{
+			"allowed_groups": ["sudo","admin","admins"]
+		},
+        "set_status":{
+			"allowed_groups": ["sudo","admin","admins"]
+		},
+        "configure_net_serversync":{
+			"allowed_groups": ["sudo","admin","admins"]
+		},
+        "stop_quotas":{
+			"allowed_groups": ["sudo","admin","admins"]
+		},
+        "start_quotas":{
+			"allowed_groups": ["sudo","admin","admins"]
+		},
+        "deconfigure_net_serversync":{
+			"allowed_groups": ["sudo","admin","admins"]
+		},
+        "get_quotafile":{
+			"allowed_groups": ["sudo","admin","admins"]
+		},
+        "detect_status_folder":{
+			"allowed_groups": ["sudo","admin","admins"]
+		},
+        "check_active_quotas":{
+			"allowed_groups": ["sudo","admin","admins"]
+		},
+        "detect_remote_nfs_mount":{
+			"allowed_groups": ["sudo","admin","admins"]
+		},
+        "get_local_status":{
+			"allowed_groups": ["sudo","admin","admins"]
+		},
+        "read_autofs_file":{
+			"allowed_groups": ["sudo","admin","admins"]
+		},
+        "get_groups":{
+			"allowed_groups": ["sudo","admin","admins"]
+		},
+        "reset_user":{
+			"allowed_groups": ["sudo","admin","admins"]
+		},
+        "reset_all_users":{
+			"allowed_groups": ["sudo","admin","admins"]
+		},
+        "myquota":{
+			"allowed_groups": ["anonymous"]
+		},
+        "get_myquota_proxied":{
+			"allowed_groups": ["anonymous"]
+		}
+	}
+}

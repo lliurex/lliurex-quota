@@ -1,11 +1,13 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import sys, os
 sys.path.insert(0,'/usr/share/n4d/python-plugins')
 from QuotaManager import QuotaManager
 
 import argparse
-import xmlrpclib
+from n4d.server import core
+from n4d.client import Client
+
 import signal
 
 def exit(signum, frame):
@@ -20,8 +22,9 @@ if __name__=='__main__':
     parser.add_argument('-u','--user',metavar='USER',nargs=1,help='User with classroom admin privileges')
     parser.add_argument('-p','--password',metavar='PASSWORD',nargs=1,help='Password from user with classroom admin privileges')
     parser.add_argument('-j','--json',metavar='',action='store_const',help='',const=True)
+    
     g = parser.add_mutually_exclusive_group(required=True)
-
+    
     g.add_argument('-co','--configure-serversync',metavar='',action='store_const',help='Configure server-sync to use quota system',const=True)
     g.add_argument('-de','--deconfigure-serversync',metavar='',action='store_const',help='Deconfigure server-sync without quota system',const=True)
 
@@ -35,7 +38,7 @@ if __name__=='__main__':
 
     g.add_argument('-cq','--show-configured-quotas',metavar='',action='store_const',help='Get current configured quotas',const=True)
     g.add_argument('-ga','--get-current-quotas',metavar='',action='store_const',help='Get current applied quotas',const=True)
-
+    
     g.add_argument('-sq','--set-quota',metavar=('USER','QUOTAVALUE','MARGINVALUE'),nargs=3,help='Set quota for user')
     g.add_argument('-sgq','--set-group-quota',metavar=('GROUPNAME','QUOTAVALUE','MARGINVALUE'),nargs=3,help='Set quota for group')
     g.add_argument('-gq','--get-quota',metavar='USER',nargs=1,help='Get quota for user')
@@ -44,21 +47,25 @@ if __name__=='__main__':
     g.add_argument('-ra','--reset-all-users',metavar='',action='store_const',help='Reset all user quotas',const=True)
 
     g.add_argument('-mq','--my-quota',metavar='',action='store_const',help='Get my current quota',const=True)
-
-
+    
     args = parser.parse_args()
+        
     if ( args.user and not args.password ) or ( args.password and not args.user ):
         print('Need user and password parameters')
         sys.exit(1)
 
     c = None
     qm = None
+    ticket = None
 
     if args.user and args.password:
         try:
-            c = xmlrpclib.ServerProxy('https://localhost:9779') # all clients have n4d ? 
-            auth = (args.user[0],args.password[0])
-            module = 'QuotaManager'
+            c = Client(address='https://localhost:9779',user=args.user[0],password=args.password[0])
+            c.validate_user()
+            ticket = c.get_ticket()
+            #c = xmlrpclib.ServerProxy('https://localhost:9779') # all clients have n4d ? 
+            #auth = (args.user[0],args.password[0])
+            #module = 'QuotaManager'
         except Exception as e:
             print('Error getting xmlrpc client, {}, trying to do direct call with QuotaManager'.format(e))
             try:
@@ -74,12 +81,12 @@ if __name__=='__main__':
 
     if args.my_quota:
         if c is not None:
-            print 'Not available'
+            print('Not available')
             sys.exit(1)
         if not qm:
-            print 'Not available, error'
+            print('Not available, error')
             sys.exit(1)
-        print qm.myquota()
+        print(qm.myquota())
         sys.exit(0)
 
     if args.configure_serversync:
@@ -90,8 +97,7 @@ if __name__=='__main__':
                 print('Error QuotaManager not available, aborting')
         else:
             try:
-                arguments=(auth,module)
-                print(c.configure_net_serversync(*arguments))
+                print(c.QuotaManager.configure_net_serversync())
             except Exception as e:
                 print('Error rpc client not available, aborting, {}'.format(e))
 
@@ -103,8 +109,7 @@ if __name__=='__main__':
                 print('Error QuotaManager not available, aborting')
         else:
             try:
-                arguments=(auth,module)
-                print(c.deconfigure_net_serversync(*arguments))
+                print(c.QuotaManager.deconfigure_net_serversync())
             except Exception as e:
                 print('Error rpc client not available, aborting, {}'.format(e))
 
@@ -116,8 +121,7 @@ if __name__=='__main__':
                 print('Error QuotaManager not available, aborting')
         else:
             try:
-                arguments=(auth,module)
-                print(c.get_status(*arguments))
+                print(c.QuotaManager.get_status())
             except Exception as e:
                 print('Error rpc client not available, aborting, {}'.format(e))
 
@@ -141,8 +145,7 @@ if __name__=='__main__':
                 print('Error QuotaManager not available, aborting')
         else:
             try:
-                arguments=(auth,module,True)
-                print(c.set_status(*arguments))
+                print(c.QuotaManager.set_status(True))
             except Exception as e:
                 print('Error rpc client not available, aborting, {}'.format(e))
 
@@ -154,8 +157,7 @@ if __name__=='__main__':
                 print('Error QuotaManager not available, aborting')
         else:
             try:
-                arguments=(auth,module,False)
-                print(c.set_status(*arguments))
+                print(c.QuotaManager.set_status(False))
             except Exception as e:
                 print('Error rpc client not available, aborting, {}'.format(e))
 
@@ -167,8 +169,7 @@ if __name__=='__main__':
                 print('Error QuotaManager not available, aborting')
         else:
             try:
-                arguments=(auth,module)
-                print(c.start_quotas(*arguments))
+                print(c.QuotaManager.start_quotas())
             except Exception as e:
                 print('Error rpc client not available, aborting, {}'.format(e))
 
@@ -180,8 +181,7 @@ if __name__=='__main__':
                 print('Error QuotaManager not available, aborting')
         else:
             try:
-                arguments=(auth,module)
-                print(c.stop_quotas(*arguments))
+                print(c.QuotaManager.stop_quotas())
             except Exception as e:
                 print('Error rpc client not available, aborting, {}'.format(e))
 
@@ -194,13 +194,12 @@ if __name__=='__main__':
                 print('Error QuotaManager not available, aborting')
         else:
             try:
-                arguments=(auth,module)
-                ret = c.get_quotafile(*arguments)
+                ret = c.QuotaManager.get_quotafile()
             except Exception as e:
                 print('Error rpc client not available, aborting, {}'.format(e))
         if args.json:
             if ret:
-                print ret
+                print(ret)
             else:
                 print('No return')
         else:
@@ -238,13 +237,12 @@ if __name__=='__main__':
                 print('Error QuotaManager not available, aborting')
         else:
             try:
-                arguments=(auth,module)
-                ret=c.get_quotas(*arguments)
+                ret=c.QuotaManager.get_quotas()
             except Exception as e:
                 print('Error rpc client not available, aborting, {}'.format(e))
         if args.json:
             if ret:
-                print ret
+                print(ret)
             else:
                 print('No return')
         else:
@@ -277,8 +275,7 @@ if __name__=='__main__':
                 print('Error QuotaManager not available, aborting')
         else:
             try:
-                arguments=(auth,module,user,quota,margin)
-                print(c.set_userquota(*arguments))
+                print(c.QuotaManager.set_userquota(user,quota,margin))
             except Exception as e:
                 print('Error rpc client not available, aborting, {}'.format(e))
 
@@ -298,8 +295,7 @@ if __name__=='__main__':
                 print('Error QuotaManager not available, aborting')
         else:
             try:
-                arguments=(auth,module,group,quota,margin)
-                print(c.set_groupquota(*arguments))
+                print(c.QuotaManager.set_groupquota(group,quota,margin))
             except Exception as e:
                 print('Error rpc client not available, aborting, {}'.format(e))
 
@@ -314,8 +310,7 @@ if __name__=='__main__':
                 print('Error QuotaManager not available, aborting')
         else:
             try:
-                arguments=(auth,module,user)
-                print(c.get_userquota(*arguments))
+                print(c.QuotaManager.get_userquota(user))
             except Exception as e:
                 print('Error rpc client not available, aborting, {}'.format(e))
 
@@ -330,8 +325,7 @@ if __name__=='__main__':
                 print('Error QuotaManager not available, aborting')
         else:
             try:
-                arguments=(auth,module,user)
-                print(c.reset_user(*arguments))
+                print(c.QuotaManager.reset_user(user))
             except Exception as e:
                 print('Error rpc client not available, aborting, {}'.format(e))
 
@@ -343,7 +337,6 @@ if __name__=='__main__':
                 print('Error QuotaManager not available, aborting')
         else:
             try:
-                arguments=(auth,module)
-                print(c.reset_all_users(*arguments))
+                print(c.QuotaManager.reset_all_users())
             except Exception as e:
                 print('Error rpc client not available, aborting, {}'.format(e))

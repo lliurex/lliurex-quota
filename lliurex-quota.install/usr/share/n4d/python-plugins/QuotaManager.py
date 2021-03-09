@@ -2,7 +2,9 @@ import os,sys,time
 import re
 import subprocess
 import json
-import xmlrpclib
+from n4d.server import core
+from n4d.client import Client
+import n4d.responses
 import getpass
 import socket
 import time
@@ -237,10 +239,12 @@ class QuotaManager:
 	@proxy
 	def detect_remote_nfs_mount(self,mount='/net/server-sync'):
 		try:
-			return self.detect_nfs_mount(mount)
+			return n4d.responses.build_successful_call_response(self.detect_nfs_mount(mount))
 		except Exception as e:
-			logging.error('Error detecting nfs mount, {}'.format(e))
-			return None
+			msg='Error detecting nfs mount, {}'.format(e)
+			logging.error(msg)
+			return n4d.responses.build_failed_call_response(ret_msg=msg)
+			# return None
 
 	def try_to_automount(self):
 		try:
@@ -252,7 +256,7 @@ class QuotaManager:
 	def detect_nfs_mount(self,mount='/net/server-sync'):
 		try:
 			self.try_to_automount()
-			nfsmounts = subprocess.check_output(['findmnt','-J','-t','nfs'],env=self.make_env())
+			nfsmounts = subprocess.check_output(['findmnt','-J','-t','nfs'],env=self.make_env()).decode('utf8')
 			if nfsmounts == '':
 				return False
 			nfsmounts_obj = json.loads(nfsmounts)
@@ -433,10 +437,10 @@ class QuotaManager:
 
 	def get_local_ips(self):
 		try:
-			ips = subprocess.check_output(['ip','-o','a','s'],env=self.make_env())
+			ips = subprocess.check_output(['ip','-o','a','s'],env=self.make_env()).decode('utf8')
 		except subprocess.CalledProcessError as e:
 			if hasattr(e,'output'):
-				ips = e.output.strip()
+				ips = e.output.decode('uft8').strip()
 			else:
 				raise SystemError('Error trying to get local ips, {}'.format(e))
 		except Exception as e:
@@ -451,7 +455,8 @@ class QuotaManager:
 	@proxy
 	def read_autofs_file(self,autofile):
 		if not os.path.exists(autofile):
-			raise ValueError('Autofs file not found')
+			return n4d.responses.build_failed_call_response(ret_msg='Autofs file not found')
+			# raise ValueError('Autofs file not found')
 		contents = ""
 		try:
 			with open(autofile,'r') as fp:
@@ -469,9 +474,10 @@ class QuotaManager:
 				raise LookupError("Unable to parse {} (autofile)".format(autofile))
 			if target[-1] == '/':
 				target = target[:-1]
-			return target
+			return n4d.responses.build_successful_call_response(target)
 		except Exception as e:
-			raise e
+			return n4d.responses.build_failed_call_response(ret_msg=str(e))
+			# raise e
 
 	def detect_mount_from_path(self,ipath):
 		if not os.path.exists(ipath):
@@ -484,10 +490,15 @@ class QuotaManager:
 			raise e
 		out = None
 		try:
-			out = json.loads(subprocess.check_output(['findmnt','-J','-T',str(ipath)],env=self.make_env()))
+			out = json.loads(subprocess.check_output(['findmnt','-J','-T',str(ipath)],env=self.make_env()).decode('utf8'))
 			fstype = out['filesystems'][0]['fstype']
 			if fstype == "autofs":
 				targetfs = self.read_autofs_file(out['filesystems'][0]['source'])
+				if targetfs.get('status') == 0:
+					targetfs = targetfs.get('return')
+				else:
+					logging.warning('Error detected calling read_autofs_file on detect_mount_from_path')
+					raise Exception(targetfs.get('msg'))
 				targetmnt = out['filesystems'][0]['target']
 				#if autofs: skips check with fstab
 				return targetfs,targetmnt
@@ -521,10 +532,10 @@ class QuotaManager:
 	def get_idx_mapping_blkid(self):
 		out = []
 		try:
-			ids = subprocess.check_output(['blkid','-o','list'],env=self.make_env())
+			ids = subprocess.check_output(['blkid','-o','list'],env=self.make_env()).decode('utf8')
 		except subprocess.CalledProcessError as e:
 			if hasattr(e,'output'):
-				ids = e.output.strip()
+				ids = e.output.decode('utf8').strip()
 			else:
 				raise SystemError('Error trying to get block id\'s'.format(e))
 		except Exception as e:
@@ -543,10 +554,10 @@ class QuotaManager:
 		out = []
 		try:
 			# each version of lsblk outputs distinct information, this is the safest method
-			ids = subprocess.check_output(['lsblk','-P','-o','NAME,FSTYPE,MOUNTPOINT,UUID'],env=self.make_env())
+			ids = subprocess.check_output(['lsblk','-P','-o','NAME,FSTYPE,MOUNTPOINT,UUID'],env=self.make_env()).decode('utf8')
 		except subprocess.CalledProcessError as e:
 			if hasattr(e,'output'):
-				ids = e.output.strip()
+				ids = e.output.decode('utf8').strip()
 			else:
 				raise SystemError('Error trying to get block id\'s'.format(e))
 		except Exception as e:
@@ -584,10 +595,10 @@ class QuotaManager:
 		out = []
 		try:
 			# each version of lsblk outputs distinct information, this is the safest method
-			realname = subprocess.check_output(['readlink','-f',str(devicelink)],env=self.make_env())
+			realname = subprocess.check_output(['readlink','-f',str(devicelink)],env=self.make_env()).decode('utf8')
 		except subprocess.CalledProcessError as e:
 			if hasattr(e,'output'):
-				realname = e.output.strip()
+				realname = e.output.decode('utf8').strip()
 			else:
 				raise SystemError('Error trying to get realname from {}, {}\'s'.format(devicelink,e))
 		except Exception as e:
@@ -801,7 +812,7 @@ class QuotaManager:
 				out = subprocess.check_output(cmd,env=self.make_env())
 			except subprocess.CalledProcessError as e:
 				if hasattr(e,'output'):
-					out = e.output
+					out = e.output.decode('utf8')
 					return False
 				else:
 					raise SystemError('Error trying to remount ({}) {}, {}'.format(cmd,mount,e))
@@ -812,10 +823,10 @@ class QuotaManager:
 				if forceumount:
 					cmdtmp = ['umount','-l',target['mountpoint']]
 					try:
-						out = subprocess.check_output(cmdtmp,env=self.make_env())
+						out = subprocess.check_output(cmdtmp,env=self.make_env()).decode('utf8')
 					except subprocess.CalledProcessError as e:
 						if hasattr(e,'output'):
-							out = e.output
+							out = e.output.decode('utf8')
 							return False
 						else:
 							raise SystemError('Error trying to remount ({}),{}, {}'.format(cmdtmp,mount,e))
@@ -824,10 +835,10 @@ class QuotaManager:
 
 					cmdtmp = ['mount','-o',target['options'],target['mountpoint']]
 					try:
-						out = subprocess.check_output(cmdtmp,env=self.make_env())
+						out = subprocess.check_output(cmdtmp,env=self.make_env()).decode('utf8')
 					except subprocess.CalledProcessError as e:
 						if hasattr(e,'output'):
-							out = e.output
+							out = e.output.decode('utf8')
 							return False
 						else:
 							raise SystemError('Error trying to remount ({}),{}, {}'.format(cmdtmp,mount,e))
@@ -836,10 +847,10 @@ class QuotaManager:
 				else:
 					cmdtmp = cmd + ['-o',target['options'],target['mountpoint']]
 					try:
-						out = subprocess.check_output(cmdtmp,env=self.make_env())
+						out = subprocess.check_output(cmdtmp,env=self.make_env()).decode('utf8')
 					except subprocess.CalledProcessError as e:
 						if hasattr(e,'output'):
-							out = e.output
+							out = e.output.decode('utf8')
 							return False
 						else:
 							raise SystemError('Error trying to remount ({}),{}, {}'.format(cmdtmp,mount,e))
@@ -905,10 +916,10 @@ class QuotaManager:
 			logging.error('Fail deactivating quotas {}'.format(e))
 		for target in targets:
 			try:
-				out=subprocess.check_output(['quotacheck','-vguma'],stderr=subprocess.STDOUT,env=self.make_env())
+				out=subprocess.check_output(['quotacheck','-vguma'],stderr=subprocess.STDOUT,env=self.make_env()).decode('utf8')
 			except subprocess.CalledProcessError as e:
 				if hasattr(e,'output'):
-					raise SystemError('Error trying to check initial quotas on {}, {}, {}'.format(target['fs'],e,e.output.strip()))
+					raise SystemError('Error trying to check initial quotas on {}, {}, {}'.format(target['fs'],e,e.output.decode('utf8').strip()))
 				else:
 					raise SystemError('Error trying to check initial quotas on {}, {}'.format(target['fs'],e))
 			except Exception as e:
@@ -926,10 +937,10 @@ class QuotaManager:
 		if not use_cache:
 			self.drop_ns_caches()
 		try:
-			pwdlist = subprocess.check_output(['getent','passwd'],env=self.make_env())
+			pwdlist = subprocess.check_output(['getent','passwd'],env=self.make_env()).decode('utf8')
 		except subprocess.CalledProcessError as e:
 			if hasattr(e,'output'):
-				pwdlist = e.output.strip()
+				pwdlist = e.output.decode('utf8').strip()
 			else:
 				raise SystemError('Error getting userlist, {}'.format(e))
 		except Exception as e:
@@ -1034,7 +1045,11 @@ class QuotaManager:
 		logging.debug('INIT NORMALIZATION PROCESS')
 
 		# FIRST PASS(A): GET QUOTAS APPLIED ON SYSTEM
-		quotas = self.get_quotas(humanunits=False,quotamanager=True)
+		try:
+			quotas = self.get_quotas(humanunits=False,quotamanager=True)
+			quotas = quotas.get('return')
+		except Exception as e:
+			logging.error('Error getting quotas while normalizing')
 		#logging.debug('quotas from fs (raw) (absolute values) {}'.format(print_dict_ordered(quotas)))
 		logging.debug('quotas from fs (raw) (absolute values) {}'.format(quotas))
 		qdict = {}
@@ -1265,10 +1280,10 @@ class QuotaManager:
 		else:
 			uparam = '-user {}'.format(user)
 		try:
-			sizes = subprocess.check_output(['find {} {} -printf "%u %s\n"'.format(folder,uparam) + "| awk '{user[$1]+=$2}; END{ for( i in user) print i \" \" user[i]}'"],shell=True,env=self.make_env())
+			sizes = subprocess.check_output(['find {} {} -printf "%u %s\n"'.format(folder,uparam) + "| awk '{user[$1]+=$2}; END{ for( i in user) print i \" \" user[i]}'"],shell=True,env=self.make_env()).decode('utf8')
 		except subprocess.CalledProcessError as e:
 			if hasattr(e,'output'):
-				pwdlist = e.output.strip()
+				pwdlist = e.output.decode('utf8').strip()
 			else:
 				raise SystemError('Error getting consumed space by user {}, {}'.format(user,e))
 		except Exception as e:
@@ -1290,10 +1305,10 @@ class QuotaManager:
 		if not use_cache:
 			self.drop_ns_caches()
 		try:
-			grplist = subprocess.check_output(['getent','group'],env=self.make_env())
+			grplist = subprocess.check_output(['getent','group'],env=self.make_env()).decode('utf8')
 		except subprocess.CalledProcessError as e:
 			if hasattr(e,'output'):
-				grplist = e.output.strip()
+				grplist = e.output.decode('utf8').strip()
 			else:
 				raise SystemError('Error getting grouplist, {}'.format(e))
 		except Exception as e:
@@ -1336,12 +1351,12 @@ class QuotaManager:
 		try:
 			with open(os.devnull,'w') as dn:
 				if uparam:
-					out = subprocess.check_output(['/usr/bin/quota','-v',uparam,'-w','-p','-F',format,'-u',user],env=self.make_env(),stderr=dn)
+					out = subprocess.check_output(['/usr/bin/quota','-v',uparam,'-w','-p','-F',format,'-u',user],env=self.make_env(),stderr=dn).decode('utf8')
 				else:
-					out = subprocess.check_output(['/usr/bin/quota','-v','-w','-p','-F',format,'-u',user],env=self.make_env(),stderr=dn)
+					out = subprocess.check_output(['/usr/bin/quota','-v','-w','-p','-F',format,'-u',user],env=self.make_env(),stderr=dn).decode('utf8')
 		except subprocess.CalledProcessError as e:
 			if hasattr(e,'output'):
-				out = e.output.strip()
+				out = e.output.decode('utf8').strip()
 			else:
 				raise SystemError('Error getting quota for user {} , {}'.format(user,e))
 		except Exception as e:
@@ -1390,7 +1405,11 @@ class QuotaManager:
 	def get_quota_user(self, user='all', extended_info=False, quotamanager=False):
 		if not quotamanager and not ALLOW_DELETED_USERS and user[0] == '#':
 			return None
-		quotas = self.get_quotas(quotamanager=quotamanager)
+		try:
+			quotas = self.get_quotas(quotamanager=quotamanager)
+			quotas = quotas.get('return')
+		except Exception as e:
+			logging.error('Error getting quotas while checking user quota')
 		if user != 'all':
 			if not extended_info:
 				out = quotas[user]['spacehardlimit'] if user in quotas else None
@@ -1476,10 +1495,10 @@ class QuotaManager:
 				for dev in devicelist:
 					cmd.extend([dev])
 					try:
-						out = subprocess.check_output(cmd,env=self.make_env())
+						out = subprocess.check_output(cmd,env=self.make_env()).decode('utf8')
 					except subprocess.CalledProcessError as e:
 						if hasattr(e,'output'):
-							out = e.output.strip()
+							out = e.output.decode('utf8').strip()
 						else:
 							raise SystemError('Error setting quota on {} = margin({}) quota({}) for user {}, {}'.format(mount,margin,quota,user,e))
 					except Exception as e:
@@ -1487,10 +1506,10 @@ class QuotaManager:
 			else:
 				cmd.extend(append_command)
 				try:
-					out = subprocess.check_output(cmd,env=self.make_env())
+					out = subprocess.check_output(cmd,env=self.make_env()).decode('utf8')
 				except subprocess.CalledProcessError as e:
 					if hasattr(e,'output'):
-						out = e.output.strip()
+						out = e.output.decode('utf8').strip()
 					else:
 						raise SystemError('Error setting quota on {} = margin({}) quota({}) for user {}, {}'.format(mount,margin,quota,user,e))
 				except Exception as e:
@@ -1532,9 +1551,10 @@ class QuotaManager:
 		ret = None
 		try:
 			ret=self.check_quotas_status(status={'user':'on','group':'on','project':'off'},device=mount,quotatype=['user','group'])
-			return ret
+			return n4d.responses.build_successful_call_response(ret)
 		except AssertionError as e:
-			return False
+			return n4d.responses.build_failed_call_response(ret_msg=str(e))
+			#return False
 		except Exception as e:
 			raise SystemError('Error checking quotas, {}'.format(e))
 
@@ -1628,11 +1648,11 @@ class QuotaManager:
 
 	def check_quotaon(self):
 		try:
-			out = subprocess.check_output(['quotaon','-pa'],env=self.make_env())
+			out = subprocess.check_output(['quotaon','-pa'],env=self.make_env()).decode('utf8')
 			out = out.strip()
 		except subprocess.CalledProcessError as e:
 			if hasattr(e,'output'):
-				out = e.output.strip()
+				out = e.output.decode('utf8').strip()
 			else:
 				raise SystemError('Error unexpected output from quotaon, {}'.format(e))
 		except Exception as e:
@@ -1654,7 +1674,7 @@ class QuotaManager:
 
 	def check_rquota_active(self):
 		try:
-			rpcinfo = subprocess.check_output(['rpcinfo','-p'],env=self.make_env())
+			rpcinfo = subprocess.check_output(['rpcinfo','-p'],env=self.make_env()).decode('utf8')
 		except Exception as e:
 			raise SystemError('Error checking rpcinfo, {}'.format(e))
 		return True if 'rquotad' in rpcinfo else False
@@ -1680,6 +1700,7 @@ class QuotaManager:
 				try:
 					time.sleep(1)
 					self.activate_script(types[type])
+					max_errors = -1
 				except:
 					max_errors = max_errors - 1
 			if max_errors == 0 and DEBUG:
@@ -1720,27 +1741,30 @@ class QuotaManager:
 		return True
 
 	def sync_quotas(self,*args,**kwargs):
-		current_detected = self.get_quotas(humanunits=False,quotamanager=True)
-
+		try:
+			current_detected = self.get_quotas(humanunits=False,quotamanager=True)
+			current_detected = current_detected.get('return')
+		except Exception as e:
+			logging.error('Error getting quotas while syncing')
 	@proxy
 	def get_quotas(self,*args,**kwargs):
 		uparam = ''
 		if 'humanunits' in kwargs:
 			if kwargs['humanunits'] == True:
-				uparam = '-asup'
+				uparam = '-aups'
 			else:
 				uparam = '-aup'
 		else:
-			uparam = '-asup'
+			uparam = '-aups'
 		if 'quotamanager' in kwargs and kwargs['quotamanager'] == True:
 			all_entries=True
 		else:
 			all_entries=False
 		try:
-			quotalist = subprocess.check_output(['repquota',uparam,'-Ocsv'],env=self.make_env())
+			quotalist = subprocess.check_output(['repquota',uparam,'-Ocsv'],env=self.make_env()).decode('utf8')
 		except subprocess.CalledProcessError as e:
 			if hasattr(e,'output'):
-				quotalist = e.output.strip()
+				quotalist = e.output.decode('utf8').strip()
 			else:
 				raise SystemError('Error getting quotalist, {}'.format(e))
 		except Exception as e:
@@ -1756,7 +1780,9 @@ class QuotaManager:
 			if AUTORESET_DELETED_USERS and str(fields[0]) and str(fields[0])[0] == '#':
 				if str(fields[5]) != '0':
 					#print('RESETTING {}'.format(fields[0]))
-					self.reset_user(fields[0][1:])
+					ret = self.reset_user(fields[0][1:])
+					if ret.get('status') != 0:
+						logging.warning('Error detected on get_quotas calling reset_user')
 				#else:
 					#print('ALREADY RESETED {}'.format(fields[0]))
 				continue
@@ -1775,14 +1801,16 @@ class QuotaManager:
 			quotadict[fields[0]]['filesoftlimit'] = fields[8]
 			quotadict[fields[0]]['filehardlimit'] = fields[9]
 			quotadict[fields[0]]['filegrace'] = fields[10]
-		return quotadict
+		return n4d.responses.build_successful_call_response(quotadict)
+		#return quotadict
 
 	@proxy
 	def get_userquota(self,*args,**kwargs):
 		retlist = []
 		for user in args:
 			retlist.append(self.get_quota_user2(user=user,quotamanager=False))
-		return retlist
+		return n4d.responses.build_successful_call_response(retlist)
+		#return retlist
 
 	@proxy
 	def get_myquota_proxied(self,user):
@@ -1791,7 +1819,9 @@ class QuotaManager:
 		if myquota:
 			myquota_time = myquota.get('time',None)
 			if ctime < myquota_time + MAX_MYQUOTA_INTERVAL:
-				return '{},{},{},{}'.format(True,user,myquota.get('used',None),myquota.get('quota',None))
+				msg = '{},{},{},{}'.format(True,user,myquota.get('used',None),myquota.get('quota',None))
+				return n4d.responses.build_successful_call_response(msg)
+				#return '{},{},{},{}'.format(True,user,myquota.get('used',None),myquota.get('quota',None))
 			else:
 				logging.debug("Cache myquota expired for user {}".format(user))
 				myquota = None
@@ -1799,20 +1829,30 @@ class QuotaManager:
 			try:
 				quota = self.get_quota_user2(user=user,quotamanager=False,extended_info=True,humanunits=False)
 				if not isinstance(quota,dict):
-					raise ValueError('Invalid quota value got from server')
+					msg = 'Invalid quota value got from server'
+					return n4d.responses.build_failed_call_response(ret_msg=msg)
+					# raise ValueError('Invalid quota value got from server')
 			except ValueError as e:
-				return '{},{},{}'.format(False,user,'Quota not available '+str(e))
+				msg='{},{},{}'.format(False,user,'Quota not available '+str(e))
+				return n4d.responses.build_failed_call_response(ret_msg=msg)
+				#return '{},{},{}'.format(False,user,'Quota not available '+str(e))
 			except Exception as e:
 				import traceback
-				return '{},{},{}'.format(False,user,e+' '+traceback.format_exc())
+				msg='{},{},{}'.format(False,user,e+' '+traceback.format_exc())
+				return n4d.responses.build_failed_call_response(ret_msg=msg)
+				#return '{},{},{}'.format(False,user,e+' '+traceback.format_exc())
 			if quota:
 				quota_used=quota.get('spaceused',None)
 				quota_hard=quota.get('spacehardlimit',None)
 			else:
-				return '{},{}'.format(False,user)
+				msg='{},{}'.format(False,user)
+				return n4d.responses.build_successful_call_response(msg)
+				# return '{},{}'.format(False,user)
 			self.myquota_data[user] = {'time':ctime,'used':quota_used,'quota':quota_hard}
 			logging.debug("Setting cache myquota for user {} -> {}".format(user,self.myquota_data[user]))
-			return '{},{},{},{}'.format(True,user,quota_used,quota_hard)
+			msg='{},{},{},{}'.format(True,user,quota_used,quota_hard)
+			return n4d.responses.build_successful_call_response(msg)
+			# return '{},{},{},{}'.format(True,user,quota_used,quota_hard)
 
 	@proxy
 	def set_userquota(self,user,quota,*args,**kwargs):
@@ -1822,22 +1862,34 @@ class QuotaManager:
 			margin = args[0]
 		#print 'setting {} = {}'.format(user,quota)
 		try:
-			return self.set_quota_user(user=user,quota=quota,margin=margin,**kwargs)
+			qu = self.set_quota_user(user=user,quota=quota,margin=margin,**kwargs)
+			if qu.get('status') == 0:
+				return n4d.responses.build_successful_call_response(qu)
+			else:
+				logging.warning('Error detected on set_userquota calling set_quota_user')
+				return n4d.responses.build_failed_call_response(ret_msg=qu.get('msg'))
 		except Exception as e:
-			return str(e)
+			logging.warning('Error detected on set_userquota calling set_quota_user')
+			return n4d.responses.build_failed_call_response(ret_msg=str(e))
 
 	def reset_user(self,user):
 		try:
-			return self.set_userquota(user,0)
+			ret = self.set_userquota(user,0)
+			if ret.get('status') == 0:
+				return n4d.responses.build_successful_call_response(ret.get('return'))
+			else:
+				logging.warning('Error detected on reset_user while calling set_userquota')
+				return n4d.responses.build_failed_call_response(ret.get('msg'))
 		except Exception as e:
-			return str(e)
+			return n4d.responses.build_failed_call_response(ret_msg=str(e))
 
 	@proxy
 	def reset_all_users(self):
 		try:
-			return self.set_quota_user(user='all',quota=0,margin=0,filterbygroup=[])
+			return n4d.responses.build_successful_call_response(self.set_quota_user(user='all',quota=0,margin=0,filterbygroup=[]))
 		except Exception as e:
-			return str(e)
+			return n4d.responses.build_failed_call_response(ret_msg=str(e))
+			# return str(e)
 
 	@proxy
 	def set_groupquota(self,group,quota,*args,**kwargs):
@@ -1846,18 +1898,23 @@ class QuotaManager:
 		else:
 			margin = args[0]
 		try:
-			return self.set_quota_group(group=group,quota=quota,margin=margin,**kwargs)
+			ret = self.set_quota_group(group=group,quota=quota,margin=margin,**kwargs)
+			return n4d.responses.build_successful_call_response(ret)
 		except Exception as e:
-			return str(e)
+			logging.warning('Error detected when calling set_quota_group on set_groupquota')
+			return n4d.responses.build_failed_call_response(ret_msg=str(e))
 
 	def apply_quotasdict(self,quotadict):
 		logging.debug('Applying quotas for users {}'.format(quotadict.keys()))
 		for user in quotadict:
-			self.set_userquota(user,quotadict[user]['quota'],quotadict[user]['margin'],persistent=False)
+			ret = self.set_userquota(user,quotadict[user]['quota'],quotadict[user]['margin'],persistent=False)
+			if ret.get('status') != 0:
+				logging.warning('Error setting user quota on apply_quotasdict')
+
 
 	@proxy
 	def get_status(self):
-		return self.get_status_file()
+		return n4d.responses.build_successful_call_response(self.get_status_file())
 
 	def get_local_status(self):
 		ret = {'local':{},'remote':{}}
@@ -1866,13 +1923,24 @@ class QuotaManager:
 		status = None
 		try:
 			status = self.detect_status_folder('/net/server-sync')
+			if status.get('status') != 0:
+				logging.warning('Error detected calling detect_status_folder on get_local_status')
+				status = None
+			else:
+				status = status.get('return')
 			if not isinstance(status,dict):
 				#raise Exception('Unknown return from detect_status_folder, {}'.format(status))
 				ret['remote']['status_serversync'] = status
 			else:
 				ret['remote']['status_serversync'] = status.get('done')
 				try:
-					ret['remote']['status_quotas'] = self.check_active_quotas(status.get('fs'))
+					aq = self.check_active_quotas(status.get('fs'))
+					if aq.get('status') == 0:
+						aq = aq.get('return')
+					else:
+						logging.warning('Error detected calling check_active_quotas on get_local_status')
+						aq = aq.get('msg')
+					ret['remote']['status_quotas'] = aq
 				except Exception as e:
 					ret['remote']['status_quotas'] = 'Fail checking if quotas are active on filesystem {}, {}'.format(status.get('fs'),e)
 		except Exception as e:
@@ -1880,23 +1948,40 @@ class QuotaManager:
 			logging.debug('Fail checking if /net/server-sync are configured, i will use \'all\' as device to check if quotas are active, {}, {}'.format(e,traceback.print_exc()))
 			ret['remote']['status_serversync']= status
 			try:
-				ret['remote']['status_quotas'] = self.check_active_quotas(status.get('fs'))
+				aq = self.check_active_quotas(status.get('fs'))
+				if aq.get('status') == 0:
+					aq = aq.get('return')
+				else:
+					logging.warning('Error detected calling check_active_quotas on get_local_status')
+					aq = aq.get('msg')
+				ret['remote']['status_quotas'] = aq
 			except Exception as e2:
 				try:
-					ret['remote']['status_quotas'] = self.check_active_quotas('all')
+					aq = self.check_active_quotas('all')
+					if aq.get('status') == 0:
+						aq = aq.get('return')
+					else:
+						logging.warning('Error detected calling check_active_quotas on get_local_status')
+					ret['remote']['status_quotas'] = aq
 				except Exception as e3:
 					ret['remote']['status_quotas'] = 'Fail checking if quotas are active, {}, {}, {} '.format(e,e2,e3)
-		ret['remote']['status_file'] = self.get_status()
-		ret['remote']['use_nfs'] = self.detect_remote_nfs_mount()
-		return ret
+		ret['remote']['status_file'] = self.get_status().get('return')
+		rn = self.detect_remote_nfs_mount()
+		if rn.get('status') == 0:
+			rn = rn.get('return')
+		else:
+			logging.warning('Error detected calling detect_remote_nfs_mount on get_local_status')
+			rn = rn.get('msg')
+		ret['remote']['use_nfs'] = rn
+		return n4d.responses.build_successful_call_response(ret)
 
 	@proxy
 	def get_quotafile(self):
-		return self.get_quotas_file()
+		return n4d.responses.build_successful_call_response(self.get_quotas_file())
 
 	@proxy
 	def set_status(self,status):
-		return self.set_status_file(status=status)
+		return n4d.responses.build_successful_call_response(self.set_status_file(status=status))
 
 	@proxy
 	def detect_status_folder(self,folder):
@@ -1916,7 +2001,8 @@ class QuotaManager:
 				if qm['mountpoint'] == mount:
 					fs = qm['fs']
 					done = True
-		return {'done':done,'fs':fs,'mount':mount }
+		return n4d.responses.build_successful_call_response({'done':done,'fs':fs,'mount':mount })
+		#return {'done':done,'fs':fs,'mount':mount }
 
 	@proxy
 	def configure_net_serversync(self):
@@ -1934,13 +2020,20 @@ class QuotaManager:
 			#            return True
 			try:
 				status = self.detect_status_folder('/net/server-sync')
+				if status.get('status') == 0:
+					status = status.get('return')
+				else:
+					logging.warning("Error detected calling detect_status_folder on configure_net_serversync")
+					status = None
 			except Exception as e:
 				logging.warning('Error getting status of folder /net/server-sync, {}'.format(e))
 				status = None
 
 			if not isinstance(status, dict):
-				logging.warning('Error unknown type returned from detect_status_folder')
-				return None
+				msg = 'Error unknown type returned from detect_status_folder'
+				logging.warning(msg)
+				return n4d.responses.build_failed_call_response(ret_msg=msg)
+				#return None
 
 			ret = None
 			if not status.get('done'):
@@ -1949,31 +2042,41 @@ class QuotaManager:
 				self.remount(status.get('mount'))
 				self.check_quotaon()
 				self.check_quotas_status(status={'user':'on','group':'on','project':'off'},device=status.get('mount'),quotatype=['user','group'])
-				self.set_groupquota(group='teachers',quota='100G')
-				self.set_groupquota(group='students',quota='50G')
+				ret2 = self.set_groupquota(group='teachers',quota='100G')
+				if ret2.get('status') != 0:
+					logging.error('Error calling set_groupquota *teachers on configure_net_serversync')
+				ret2 = self.set_groupquota(group='students',quota='50G')
+				if ret2.get('status') != 0:
+					logging.error('Error calling set_groupquota *students on configure_net_serversync')
 				self.normalize_quotas()
-			return ret
+			return n4d.responses.build_successful_call_response(ret)
 		except Exception as e:
-			logging.error('Exception occured configuring /net/server-sync, {}'.format(e))
-			return False
+			msg = 'Exception occured configuring /net/server-sync, {}'.format(e)
+			logging.error(msg)
+			return n4d.responses.build_failed_call_response(ret_msg=msg)
+			# return False
 
 	@proxy
 	def stop_quotas(self):
 		try:
 			self.activate('quotaoff')
-			return self.check_quotaon()
+			return n4d.responses.build_successful_call_response(self.check_quotaon())
 		except Exception as e:
-			logging.error('Exception occured stopping quotas, {}'.format(e))
-			return False
+			msg='Exception occured stopping quotas, {}'.format(e)
+			logging.error(msg)
+			return n4d.responses.build_failed_call_response(ret_msg=msg)
+			# return False
 
 	@proxy
 	def start_quotas(self):
 		try:
 			self.activate('quotaon')
-			return self.check_quotaon()
+			return n4d.responses.build_successful_call_response(self.check_quotaon())
 		except Exception as e:
-			logging.error('Exception occured starting quotas, {}'.format(e))
-			return False
+			msg='Exception occured starting quotas, {}'.format(e)
+			logging.error(msg)
+			return n4d.responses.build_failed_call_response(ret_msg=msg)
+			#return False
 
 	def get_groups(self):
 		base="ou=Managed,ou=Groups,dc=ma5,dc=lliurex,dc=net"
@@ -1989,7 +2092,9 @@ class QuotaManager:
 		try:
 			client=ldap.initialize(url)
 		except Exception as e:
-			SystemError('Error connecting ldap server, {}'.format(e))
+			msg='Error connecting ldap server, {}'.format(e)
+			return n4d.responses.build_failed_call_response(ret_msg=msg)
+			SystemError(msg)
 		try:
 			result = client.search_s(base,ldap.SCOPE_SUBTREE)
 			# pasted code from LdapManager get_available_groups plugin
@@ -1999,10 +2104,12 @@ class QuotaManager:
 				dic["path"]=g_path
 				if "posixGroup" in dic["objectClass"]:
 					 group_list.append(dic)
-			return group_list
+			return n4d.responses.build_successful_call_response(group_list)
 		except Exception as e:
-			logging.error('Exception occured getting groups, {}'.format(e))
-			return [e]
+			msg='Exception occured getting groups, {}'.format(e)
+			logging.error(msg)
+			return n4d.responses.build_failed_call_response(ret_msg=msg)
+			# return [e]
 
 	@proxy
 	def deconfigure_net_serversync(self):
@@ -2018,10 +2125,12 @@ class QuotaManager:
 				self.activate('quotaon',silent=True)
 			except:
 				pass
-			return ret
+			return n4d.responses.build_successful_call_response(ret)
 		except Exception as e:
-			logging.error('Exception occured deconfiguring /net/server-sync, {}'.format(e))
-			return False
+			msg='Exception occured deconfiguring /net/server-sync, {}'.format(e)
+			logging.error(msg)
+			return n4d.responses.build_failed_call_response(ret_msg=msg)
+			# return False
 
 	def myquota(self):
 		user_id = os.getuid()
@@ -2030,13 +2139,15 @@ class QuotaManager:
 			try:
 				user_name = user_name.pw_name
 			except:
-				return '{}'.format(False)
+				return n4d.responses.build_successful_call_response('{}'.format(False))
+				# return '{}'.format(False)
 		else:
-			return '{},{}'.format(False,user_id)
-		return self.get_myquota_proxied(user_name)
+			return n4d.responses.build_successful_call_response('{},{}'.format(False,user_id))
+			#return '{},{}'.format(False,user_id)
+		return n4d.responses.build_successful_call_response(self.get_myquota_proxied(user_name))
 
 	def periodic_actions(self):
-		if self.get_status():
+		if self.get_status().get('return'):
 			try:
 				if not self.check_quotas_status(status={'user':'on','group':'on','project':'off'},device='all',quotatype=['user','group']):
 					self.activate('quotaon')
