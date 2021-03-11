@@ -1680,6 +1680,7 @@ class QuotaManager:
 				try:
 					time.sleep(1)
 					self.activate_script(types[type])
+					max_errors = -1
 				except:
 					max_errors = max_errors - 1
 			if max_errors == 0 and DEBUG:
