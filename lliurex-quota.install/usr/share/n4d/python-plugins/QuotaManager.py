@@ -2144,7 +2144,7 @@ class QuotaManager:
 		else:
 			return n4d.responses.build_successful_call_response('{},{}'.format(False,user_id))
 			#return '{},{}'.format(False,user_id)
-		return n4d.responses.build_successful_call_response(self.get_myquota_proxied(user_name))
+		return self.get_myquota_proxied(user_name)
 
 	def periodic_actions(self):
 		if self.get_status().get('return'):
