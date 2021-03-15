@@ -1119,7 +1119,7 @@ class QuotaManager:
 		# FOURTH PASS: CALCULATE USER QUOTAS TO BE APPLIED FUNCTION OF MEMBER OF GROUPS
 		override_quotas = {}
 		# CHECK USER QUOTA, IF HAS ONE NONE OF GROUP NEED TO BE USED
-		all_users = qfile['users'].keys()
+		all_users = list(qfile['users'].keys())
 		remove_user = []
 		for user in all_users:
 			if 'quota' in qfile['users'][user] and qfile['users'][user]['quota'] != 0:
@@ -1863,11 +1863,7 @@ class QuotaManager:
 		#print 'setting {} = {}'.format(user,quota)
 		try:
 			qu = self.set_quota_user(user=user,quota=quota,margin=margin,**kwargs)
-			if qu.get('status') == 0:
-				return n4d.responses.build_successful_call_response(qu)
-			else:
-				logging.warning('Error detected on set_userquota calling set_quota_user')
-				return n4d.responses.build_failed_call_response(ret_msg=qu.get('msg'))
+			return n4d.responses.build_successful_call_response(qu)
 		except Exception as e:
 			logging.warning('Error detected on set_userquota calling set_quota_user')
 			return n4d.responses.build_failed_call_response(ret_msg=str(e))
