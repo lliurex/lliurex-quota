@@ -8,6 +8,6 @@ Homepage: http://lliurex.net
 
 Package: lliurex-quota
 Architecture: all
-Depends: ${shlibs:Depends}, ${misc:Depends}, n4d, quota
+Depends: ${shlibs:Depends}, ${misc:Depends}, n4d, quota, python3-ldap
 Description: Quota manager for Lliurex systems
  Lliurex-quota manages quota system when classroom model is used.

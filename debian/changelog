@@ -1,3 +1,9 @@
+lliurex-quota (0.1.6.2-focal3) focal; urgency=medium
+
+  * Add dependency python3-ldap
+
+ -- M.Angel Juan <m.angel.juan@gmail.com>  Wed, 19 May 2021 16:45:24 +0200
+
 lliurex-quota (0.1.6.2-focal2) focal; urgency=medium
 
   * fix slave client creation 
