@@ -1,9 +1,14 @@
+#!/usr/bin/env python3
+
 import os,sys,time
 import re
 import subprocess
 import json
 from n4d.server import core
 from n4d.client import Client
+import xmlrpc
+import xmlrpc.client
+import ssl
 import n4d.responses
 import getpass
 import socket
@@ -157,7 +162,7 @@ class QuotaManager:
 						else:
 							logging.critical('Exception when getting a client, {}'.format(e))
 					try:
-						self.client.listMethods()
+						self.client.get_methods()
 						#
 						# TODO: check and emit warning if method used it's not configured as xmlrpc call
 						# missing into n4d conf file
@@ -414,7 +419,9 @@ class QuotaManager:
 		if (url == 'fake'):
 			return client
 		try:
-			client = xmlrpclib.ServerProxy(url,allow_none=True)
+			import xmlrpc.client
+			ctx = ssl._create_unverified_context()
+			client = xmlrpc.client.ServerProxy(url,context=ctx,allow_none=True)
 			client.get_methods()
 		except Exception as e:
 			#raise Exception('Can\'t create xml client, {}, {}'.format(url,e))
@@ -2074,6 +2081,31 @@ class QuotaManager:
 			return n4d.responses.build_failed_call_response(ret_msg=msg)
 			#return False
 
+	def decode_bytes(self,thing):
+		if isinstance(thing,bytes):
+			return thing.decode('utf8')
+		return thing
+
+	def remove_bytes(self,thing):
+		new = None
+		if isinstance(thing,dict):
+			new = {}
+			for key,value in thing.items():
+				new[self.decode_bytes(key)]=self.remove_bytes(value)
+		elif isinstance(thing, list):
+			new = []
+			for item in thing:
+				new.append(self.remove_bytes(item))
+		elif isinstance(thing, tuple):
+			new = tuple()
+			for item in thing:
+				new += (self.remove_bytes(item),)
+		elif isinstance(thing,bytes):
+			new = self.decode_bytes(thing)
+		else:
+			new = thing
+		return new
+
 	def get_groups(self):
 		base="ou=Managed,ou=Groups,dc=ma5,dc=lliurex,dc=net"
 		type_system = 'x'
@@ -2092,7 +2124,7 @@ class QuotaManager:
 			return n4d.responses.build_failed_call_response(ret_msg=msg)
 			SystemError(msg)
 		try:
-			result = client.search_s(base,ldap.SCOPE_SUBTREE)
+			result = self.remove_bytes(client.search_s(base,ldap.SCOPE_SUBTREE))
 			# pasted code from LdapManager get_available_groups plugin
 			group_list = []
 			for group in result:
