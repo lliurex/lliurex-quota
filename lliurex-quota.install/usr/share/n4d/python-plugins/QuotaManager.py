@@ -1108,6 +1108,7 @@ class QuotaManager:
 
 		# THIRD PASS(B): ADD POSSIBLE USER/GROUP DIFERENCES INTO DICT THAT REPRESENTS FILE AND ASSING DEFAULT QUOTAS
 		users = self.get_system_users()
+		qfile.setdefault('users',{})
 		new_users = [ user for user in users if user not in qfile['users'] ]
 		deleted_users = [ user for user in qfile['users'] if user not in users ]
 		#for user in users:
@@ -1438,8 +1439,11 @@ class QuotaManager:
 
 	def set_quota_group(self, group='', quota='0M', margin='0M'):
 		qfile = self.get_quotas_file()
-		nquota = self.normalize_units(quota);
-		nmargin = self.normalize_units(margin);
+		nquota = self.normalize_units(quota)
+		nmargin = self.normalize_units(margin)
+		if not isinstance(qfile,dict):
+			raise ValueError('Unknown value for file quotas content\'s')
+		qfile.setdefault('groups',{})
 		if group not in qfile['groups']:
 			qfile['groups'].setdefault(group,{'quota':nquota,'margin':nmargin});
 		else:
