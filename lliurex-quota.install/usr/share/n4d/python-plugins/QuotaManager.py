@@ -1228,11 +1228,11 @@ class QuotaManager:
 					logging.debug('Getting moving for user ({}) --> {}'.format(user,dpath))
 					logging.debug('moving quota {}'.format(userinfo[user]['moving_quota']))
 
-					userinfo[user]['normquota']['hard'] = userinfo[user]['quota']['quota'] + userinfo[user]['quota']['margin'] + (userinfo[user]['moving_quota'] * 2)
-					userinfo[user]['normquota']['soft'] = userinfo[user]['quota']['quota'] + (userinfo[user]['moving_quota'] * 2) 
+					userinfo[user]['normquota']['hard'] = int(userinfo[user]['quota']['quota'] + userinfo[user]['quota']['margin'] + (userinfo[user]['moving_quota'] * 2))
+					userinfo[user]['normquota']['soft'] = int(userinfo[user]['quota']['quota'] + (userinfo[user]['moving_quota'] * 2) )
 				else:
-					userinfo[user]['normquota']['hard'] = userinfo[user]['quota']['quota'] + userinfo[user]['quota']['margin']
-					userinfo[user]['normquota']['soft'] = userinfo[user]['quota']['quota']
+					userinfo[user]['normquota']['hard'] = int(userinfo[user]['quota']['quota'] + userinfo[user]['quota']['margin'])
+					userinfo[user]['normquota']['soft'] = int(userinfo[user]['quota']['quota'])
 			except Exception as e:
 				import traceback
 				logging.error("ERROR NORMALIZING {} {} {}".format(str(e),traceback.format_exc(),user))
