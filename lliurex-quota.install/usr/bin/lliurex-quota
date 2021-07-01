@@ -57,6 +57,7 @@ if __name__=='__main__':
     c = None
     qm = None
     ticket = None
+    ret = ""
 
     if args.user and args.password:
         try:
@@ -86,104 +87,131 @@ if __name__=='__main__':
         if not qm:
             print('Not available, error')
             sys.exit(1)
-        print(qm.myquota())
+        ret=qm.myquota()
+        if ret.get('return') and ret.get('status') == 0:
+            ret = ret.get('return')
+        print(ret)
         sys.exit(0)
 
     if args.configure_serversync:
         if c is None: # direct call, no need n4d call
             if qm:
-                print(qm.configure_net_serversync())
+                ret = qm.configure_net_serversync()
             else:
                 print('Error QuotaManager not available, aborting')
         else:
             try:
-                print(c.QuotaManager.configure_net_serversync())
+                ret = c.QuotaManager.configure_net_serversync()
             except Exception as e:
                 print('Error rpc client not available, aborting, {}'.format(e))
+        if ret.get('return') and ret.get('status') == 0:
+            ret = ret.get('return')
+        print(ret)
 
     if args.deconfigure_serversync:
         if c is None:
             if qm:
-                print(qm.deconfigure_net_serversync())
+                ret = qm.deconfigure_net_serversync()
             else:
                 print('Error QuotaManager not available, aborting')
         else:
             try:
-                print(c.QuotaManager.deconfigure_net_serversync())
+                ret = c.QuotaManager.deconfigure_net_serversync()
             except Exception as e:
                 print('Error rpc client not available, aborting, {}'.format(e))
+        if ret.get('return') and ret.get('status') == 0:
+            ret = ret.get('return')
+        print(ret)
 
     if args.get_status:
         if c is None:
             if qm:
-                print(qm.get_status())
+                ret = qm.get_status()
             else:
                 print('Error QuotaManager not available, aborting')
         else:
             try:
-                print(c.QuotaManager.get_status())
+                ret = c.QuotaManager.get_status()
             except Exception as e:
                 print('Error rpc client not available, aborting, {}'.format(e))
-
+        if ret.get('return') and ret.get('status') == 0:
+            ret = ret.get('return')
+        print(ret)
+    
     if args.get_local_status:
         if qm:
-            print(qm.get_local_status())
+            ret = qm.get_local_status()
         else:
             try:
                 qm = QuotaManager()
                 if args.user and args.password:
                     qm.set_credentials(args.user[0], args.password[0])
-                print(qm.get_local_status())
+                ret = qm.get_local_status()
             except Exception as e:
                 print('QuotaManager not available!, {}'.format(e))
+        if ret.get('return') and ret.get('status') == 0:
+            ret = ret.get('return')
+        print(ret)
 
     if args.set_enabled:
         if c is None:
             if qm:
-                print(qm.set_status(True))
+                ret = qm.set_status(True)
             else:
                 print('Error QuotaManager not available, aborting')
         else:
             try:
-                print(c.QuotaManager.set_status(True))
+                ret = c.QuotaManager.set_status(True)
             except Exception as e:
                 print('Error rpc client not available, aborting, {}'.format(e))
+        if ret.get('return') and ret.get('status') == 0:
+            ret = ret.get('return')
+        print(ret)
 
     if args.set_disabled:
         if c is None:
             if qm:
-                print(qm.set_status(False))
+                ret = qm.set_status(False)
             else:
                 print('Error QuotaManager not available, aborting')
         else:
             try:
-                print(c.QuotaManager.set_status(False))
+                ret = c.QuotaManager.set_status(False)
             except Exception as e:
                 print('Error rpc client not available, aborting, {}'.format(e))
+        if ret.get('return') and ret.get('status') == 0:
+            ret = ret.get('return')
+        print(ret)
 
     if args.start_quotas:
         if c is None:
             if qm:
-                print(qm.start_quotas())
+                ret = qm.start_quotas()
             else:
                 print('Error QuotaManager not available, aborting')
         else:
             try:
-                print(c.QuotaManager.start_quotas())
+                ret = c.QuotaManager.start_quotas()
             except Exception as e:
                 print('Error rpc client not available, aborting, {}'.format(e))
+        if ret.get('return') and ret.get('status') == 0:
+            ret = ret.get('return')
+        print(ret)
 
     if args.stop_quotas:
         if c is None:
             if qm:
-                print(qm.stop_quotas())
+                ret = qm.stop_quotas()
             else:
                 print('Error QuotaManager not available, aborting')
         else:
             try:
-                print(c.QuotaManager.stop_quotas())
+                ret = c.QuotaManager.stop_quotas()
             except Exception as e:
                 print('Error rpc client not available, aborting, {}'.format(e))
+        if ret.get('return') and ret.get('status') == 0:
+            ret = ret.get('return')
+        print(ret)
 
     if args.show_configured_quotas:
         ret = None
@@ -197,6 +225,8 @@ if __name__=='__main__':
                 ret = c.QuotaManager.get_quotafile()
             except Exception as e:
                 print('Error rpc client not available, aborting, {}'.format(e))
+        if ret.get('return') and ret.get('status') == 0:
+            ret = ret.get('return')
         if args.json:
             if ret:
                 print(ret)
@@ -240,6 +270,8 @@ if __name__=='__main__':
                 ret=c.QuotaManager.get_quotas()
             except Exception as e:
                 print('Error rpc client not available, aborting, {}'.format(e))
+        if ret.get('return') and ret.get('status') == 0:
+            ret = ret.get('return')
         if args.json:
             if ret:
                 print(ret)
@@ -270,15 +302,17 @@ if __name__=='__main__':
             margin = margin[0]
         if c is None:
             if qm:
-                print(qm.set_userquota(user,quota,margin))
+                ret = qm.set_userquota(user,quota,margin)
             else:
                 print('Error QuotaManager not available, aborting')
         else:
             try:
-                print(c.QuotaManager.set_userquota(user,quota,margin))
+                ret = c.QuotaManager.set_userquota(user,quota,margin)
             except Exception as e:
                 print('Error rpc client not available, aborting, {}'.format(e))
-
+        if ret.get('return') and ret.get('status') == 0:
+            ret = ret.get('return')
+        print(ret)
 
     if args.set_group_quota:
         group,quota,margin = args.set_group_quota
@@ -290,14 +324,17 @@ if __name__=='__main__':
             margin = margin[0]
         if c is None:
             if qm:
-                print(qm.set_groupquota(group,quota,margin))
+                ret = qm.set_groupquota(group,quota,margin)
             else:
                 print('Error QuotaManager not available, aborting')
         else:
             try:
-                print(c.QuotaManager.set_groupquota(group,quota,margin))
+                ret = c.QuotaManager.set_groupquota(group,quota,margin)
             except Exception as e:
                 print('Error rpc client not available, aborting, {}'.format(e))
+        if ret.get('return') and ret.get('status') == 0:
+            ret = ret.get('return')
+        print(ret)
 
     if args.get_quota:
         user = args.get_quota
@@ -305,14 +342,17 @@ if __name__=='__main__':
             user = user[0]
         if c is None:
             if qm:
-                print(qm.get_userquota(user))
+                ret = qm.get_userquota(user)
             else:
                 print('Error QuotaManager not available, aborting')
         else:
             try:
-                print(c.QuotaManager.get_userquota(user))
+                ret = c.QuotaManager.get_userquota(user)
             except Exception as e:
                 print('Error rpc client not available, aborting, {}'.format(e))
+        if ret.get('return') and ret.get('status') == 0:
+            ret = ret.get('return')
+        print(ret)
 
     if args.reset_user:
         user = args.reset_user
@@ -320,23 +360,29 @@ if __name__=='__main__':
             user = user[0]
         if c is None:
             if qm:
-                print(qm.reset_user(user))
+                ret = qm.reset_user(user)
             else:
                 print('Error QuotaManager not available, aborting')
         else:
             try:
-                print(c.QuotaManager.reset_user(user))
+                ret = c.QuotaManager.reset_user(user)
             except Exception as e:
                 print('Error rpc client not available, aborting, {}'.format(e))
+        if ret.get('return') and ret.get('status') == 0:
+            ret = ret.get('return')
+        print(ret)
 
     if args.reset_all_users:
         if c is None:
             if qm:
-                print(qm.reset_all_users())
+                ret = qm.reset_all_users()
             else:
                 print('Error QuotaManager not available, aborting')
         else:
             try:
-                print(c.QuotaManager.reset_all_users())
+                ret = c.QuotaManager.reset_all_users()
             except Exception as e:
                 print('Error rpc client not available, aborting, {}'.format(e))
+        if ret.get('return') and ret.get('status') == 0:
+            ret = ret.get('return')
+        print(ret)
