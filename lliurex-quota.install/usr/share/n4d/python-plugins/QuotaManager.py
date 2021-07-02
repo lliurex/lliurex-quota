@@ -1086,6 +1086,7 @@ class QuotaManager:
 
 		# THIRD PASS(B): ADD POSSIBLE USER/GROUP DIFERENCES INTO DICT THAT REPRESENTS FILE AND ASSING DEFAULT QUOTAS
 		users = self.get_system_users()
+		qfile.setdefault('users',{})
 		new_users = [ user for user in users if user not in qfile['users'] ]
 		deleted_users = [ user for user in qfile['users'] if user not in users ]
 		#for user in users:
@@ -1205,11 +1206,11 @@ class QuotaManager:
 					logging.debug('Getting moving for user ({}) --> {}'.format(user,dpath))
 					logging.debug('moving quota {}'.format(userinfo[user]['moving_quota']))
 
-					userinfo[user]['normquota']['hard'] = userinfo[user]['quota']['quota'] + userinfo[user]['quota']['margin'] + (userinfo[user]['moving_quota'] * 2)
-					userinfo[user]['normquota']['soft'] = userinfo[user]['quota']['quota'] + (userinfo[user]['moving_quota'] * 2) 
+					userinfo[user]['normquota']['hard'] = int(userinfo[user]['quota']['quota'] + userinfo[user]['quota']['margin'] + (userinfo[user]['moving_quota'] * 2))
+					userinfo[user]['normquota']['soft'] = int(userinfo[user]['quota']['quota'] + (userinfo[user]['moving_quota'] * 2) )
 				else:
-					userinfo[user]['normquota']['hard'] = userinfo[user]['quota']['quota'] + userinfo[user]['quota']['margin']
-					userinfo[user]['normquota']['soft'] = userinfo[user]['quota']['quota']
+					userinfo[user]['normquota']['hard'] = int(userinfo[user]['quota']['quota'] + userinfo[user]['quota']['margin'])
+					userinfo[user]['normquota']['soft'] = int(userinfo[user]['quota']['quota'])
 			except Exception as e:
 				import traceback
 				logging.error("ERROR NORMALIZING {} {} {}".format(str(e),traceback.format_exc(),user))
@@ -1412,8 +1413,11 @@ class QuotaManager:
 
 	def set_quota_group(self, group='', quota='0M', margin='0M'):
 		qfile = self.get_quotas_file()
-		nquota = self.normalize_units(quota);
-		nmargin = self.normalize_units(margin);
+		nquota = self.normalize_units(quota)
+		nmargin = self.normalize_units(margin)
+		if not isinstance(qfile,dict):
+			raise ValueError('Unknown value for file quotas content\'s')
+		qfile.setdefault('groups',{})
 		if group not in qfile['groups']:
 			qfile['groups'].setdefault(group,{'quota':nquota,'margin':nmargin});
 		else:
@@ -1680,6 +1684,7 @@ class QuotaManager:
 				try:
 					time.sleep(1)
 					self.activate_script(types[type])
+					max_errors = -1
 				except:
 					max_errors = max_errors - 1
 			if max_errors == 0 and DEBUG:
