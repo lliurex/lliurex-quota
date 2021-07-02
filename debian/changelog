@@ -1,3 +1,11 @@
+lliurex-quota (0.1.6.3-focal) focal; urgency=medium
+
+  * Fix parse returned data into client
+  * Fix client output
+  * Fix default quota's into initialization
+
+ -- M.Angel Juan <m.angel.juan@gmail.com>  Fri, 02 Jul 2021 11:28:23 +0200
+
 lliurex-quota (0.1.6.2-focal3) focal; urgency=medium
 
   * Add dependency python3-ldap
