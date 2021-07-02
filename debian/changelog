@@ -1,3 +1,9 @@
+lliurex-quota (0.1.6.3) bionic; urgency=medium
+
+  * Fix initialization issues with default quota's
+
+ -- M.Angel Juan <m.angel.juan@gmail.com>  Fri, 02 Jul 2021 11:40:00 +0200
+
 lliurex-quota (0.1.6.2) bionic; urgency=medium
 
   * Fix uuid case sensible mapping
