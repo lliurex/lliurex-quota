@@ -1,3 +1,9 @@
+lliurex-quota (0.1.6.3.1-focal) focal; urgency=medium
+
+  * Fix server plugin method discovery
+
+ -- M.Angel Juan <m.angel.juan@gmail.com>  Tue, 13 Jul 2021 15:48:28 +0200
+
 lliurex-quota (0.1.6.3-focal) focal; urgency=medium
 
   * Fix parse returned data into client
