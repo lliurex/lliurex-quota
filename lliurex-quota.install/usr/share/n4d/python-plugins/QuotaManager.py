@@ -107,18 +107,18 @@ class QuotaManager:
 		return self.client
 
 	def ask_auth(self):
-		user = raw_input('Network user? (netadmin) ')
+		user = input('Network user? (netadmin) ')
 		if user.strip() == '':
 			user = 'netadmin'
 		pwd = getpass.getpass('Password? ')
 		return (user,pwd)
 
 	def get_auth(self,namefunc):
-		methods = self.client.get_methods('QuotaManager').strip().split('\n')
-		n4dinfo = { line.strip().split(' ')[1] : line.strip().split(' ')[3:] for line in methods if len(line.strip().split(' ')) > 3 }
-		if namefunc not in n4dinfo:
+		qm_info = self.client.get_methods().get('return',{}).get('QuotaManager',{})
+		methods = list(qm_info.keys())
+		if namefunc not in methods:
 			return None
-		if 'anonymous' in n4dinfo[namefunc]:
+		if 'anonymous' in qm_info.get(namefunc,{}).get('allowed_groups',[]):
 			return ''
 		else:
 			return self.ask_auth()
