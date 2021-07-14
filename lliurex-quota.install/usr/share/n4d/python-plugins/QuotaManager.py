@@ -119,7 +119,7 @@ class QuotaManager:
 		if namefunc not in methods:
 			return None
 		if 'anonymous' in qm_info.get(namefunc,{}).get('allowed_groups',[]):
-			return ''
+			return None
 		else:
 			return self.ask_auth()
 
@@ -184,15 +184,18 @@ class QuotaManager:
 						if cparams and len(cparams) == 2 and type(cparams[0]) == type(str()) and type(cparams[1]) == type(str()):
 							self.auth = cparams
 					if func.__name__ in self.anon_functions:
-						self.auth = ''
+						self.auth = None
 					else:
 						if type(self.auth) == type(None):
 							self.auth = self.get_auth(func.__name__)
 						if type(self.auth) == type(None):
 							ret = "N4D doesn't provide this function, check n4d configuration"
 							return ret
+					auth = self.auth
+					if self.auth is None:
+						auth = ''
 					params = []
-					params.append(self.auth)
+					params.append(auth)
 					params.append('QuotaManager')
 					params.extend(args)
 					logging.debug('calling {} with params {}'.format(func.__name__,params))
