@@ -1,3 +1,9 @@
+lliurex-quota (0.1.6.3.2-jammy) UNRELEASED; urgency=medium
+
+  * First jammy release 
+
+ -- Hector Garcia Huerta <hectorgh@gmail.com>  Thu, 07 Dec 2023 09:25:58 +0100
+
 lliurex-quota (0.1.6.3.2-focal) focal; urgency=medium
 
   * Fix slave auth on some circumpstancies reported
